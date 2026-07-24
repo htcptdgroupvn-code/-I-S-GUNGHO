@@ -503,7 +503,7 @@ let USERS = [];
 const ROLE_META = {
   dai_su: { label: "Đại sứ Gungho", short: "Đại sứ", color: "bg-teal-50 text-teal-700 border-teal-200" },
   xu_ly: { label: "Nhân viên xử lý - chăm sóc", short: "Xử lý CSKH", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  cht: { label: "Cửa hàng trưởng / Quản lý", short: "CHT", color: "bg-amber-50 text-amber-800 border-amber-200" },
+  cht: { label: "Trưởng đơn vị", short: "Trưởng đơn vị", color: "bg-amber-50 text-amber-800 border-amber-200" },
   ke_toan: { label: "Kế toán", short: "Kế toán", color: "bg-rose-50 text-rose-700 border-rose-200" },
   admin: { label: "Quản trị hệ thống", short: "Admin", color: "bg-slate-800 text-white border-slate-800" },
 };
@@ -1454,7 +1454,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
               </SelectField>
             )}
             <SelectField label="Người chăm sóc (tùy chọn)" value={form.handlerId} onChange={(e) => setForm({ ...form, handlerId: e.target.value })}>
-              <option value="">— Không chọn, gửi về cửa hàng trưởng —</option>
+              <option value="">— Không chọn, gửi về trưởng đơn vị —</option>
               {handlers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </SelectField>
             {error && (
