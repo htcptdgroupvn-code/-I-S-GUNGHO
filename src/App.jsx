@@ -1254,7 +1254,7 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <SectionTitle icon={Users} title="Danh sách khách hàng" subtitle={`Bạn đang theo dõi ${mine.length} khách hàng`} />
+        <SectionTitle icon={Users} title="Danh sách khách hàng" subtitle={isAdmin ? `Toàn bộ ${mine.length} khách hàng, nhóm theo Đại sứ Gungho` : `Bạn đang theo dõi ${mine.length} khách hàng`} />
         <PrimaryButton onClick={() => setShowForm((s) => !s)}>
           <UserPlus size={15} /> Thêm khách hàng
         </PrimaryButton>
@@ -1281,6 +1281,8 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
 
       {mine.length === 0 ? (
         <EmptyState icon={Users} text="Chưa có khách hàng nào — bấm “Thêm khách hàng” để bắt đầu." />
+      ) : isAdmin ? (
+        <AdminCustomerGroups customers={mine} />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {mine.map((c) => (
@@ -1293,6 +1295,42 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function AdminCustomerGroups({ customers }) {
+  const groups = new Map();
+  customers.forEach((c) => {
+    const key = c.createdByName || "Không rõ người tạo";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  });
+  const sortedGroups = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  return (
+    <div className="space-y-6">
+      {sortedGroups.map(([name, list]) => (
+        <div key={name}>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-7 h-7 rounded-full bg-teal-800 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+              {name.split(" ").slice(-1)[0][0]}
+            </div>
+            <p className="text-sm font-semibold text-slate-700">{name}</p>
+            <Badge className="bg-slate-100 text-slate-600 border-slate-200">{list.length} khách hàng</Badge>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {list.map((c) => (
+              <Card key={c.id} className="p-4">
+                <p className="font-medium text-slate-800">{c.name}</p>
+                <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Phone size={13} /> {c.phone}</p>
+                {c.address && <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><MapPin size={13} /> {c.address}</p>}
+                <p className="text-[11px] text-slate-400 mt-2">Thêm lúc {fmtDate(c.createdAt)}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
