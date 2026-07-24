@@ -505,6 +505,7 @@ const ROLE_META = {
   xu_ly: { label: "Nhân viên xử lý - chăm sóc", short: "Xử lý CSKH", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
   cht: { label: "Cửa hàng trưởng / Quản lý", short: "CHT", color: "bg-amber-50 text-amber-800 border-amber-200" },
   ke_toan: { label: "Kế toán", short: "Kế toán", color: "bg-rose-50 text-rose-700 border-rose-200" },
+  admin: { label: "Quản trị hệ thống", short: "Admin", color: "bg-slate-800 text-white border-slate-800" },
 };
 
 const STATUS_META = {
@@ -909,7 +910,7 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const defaults = { dai_su: "khach_hang", xu_ly: "duoc_giao", cht: "phan_cong", ke_toan: "cho_xac_nhan" };
+    const defaults = { dai_su: "khach_hang", xu_ly: "duoc_giao", cht: "phan_cong", ke_toan: "cho_xac_nhan", admin: "bao_cao_cht" };
     setTab(defaults[currentUser.role]);
   }, [currentUser]);
 
@@ -1125,6 +1126,16 @@ export default function App() {
       { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
       { key: "lich_su", label: "Lịch sử", icon: Wallet },
     ],
+    admin: [
+      ...BASE_NAV,
+      { key: "duoc_giao", label: "Đơn được giao", icon: Inbox },
+      { key: "don_hang_cskh", label: "Đơn hàng CSKH", icon: ClipboardList },
+      { key: "bao_cao_cskh", label: "Báo cáo CSKH", icon: BarChart3 },
+      { key: "phan_cong", label: "Phân công", icon: ArrowRightLeft },
+      { key: "bao_cao_cht", label: "Báo cáo doanh số", icon: BarChart3 },
+      { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
+      { key: "lich_su", label: "Lịch sử", icon: Wallet },
+    ],
   };
   const navItems = NAV[currentUser.role];
 
@@ -1216,7 +1227,8 @@ export default function App() {
 function DaiSuKhachHang({ currentUser, customers, onAdd }) {
   const [form, setForm] = useState({ name: "", phone: "", address: "" });
   const [showForm, setShowForm] = useState(false);
-  const mine = customers.filter((c) => c.createdBy === currentUser.id);
+  const isAdmin = currentUser.role === "admin";
+  const mine = isAdmin ? customers : customers.filter((c) => c.createdBy === currentUser.id);
 
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1291,8 +1303,9 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
 
 function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const [showForm, setShowForm] = useState(false);
-  const mineCustomers = customers.filter((c) => c.createdBy === currentUser.id);
-  const mineOrders = orders.filter((o) => o.createdBy === currentUser.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const isAdmin = currentUser.role === "admin";
+  const mineCustomers = isAdmin ? customers : customers.filter((c) => c.createdBy === currentUser.id);
+  const mineOrders = (isAdmin ? orders : orders.filter((o) => o.createdBy === currentUser.id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const handlers = USERS.filter((u) => u.role === "xu_ly");
 
   const defaultBranch = branchInfo(currentUser.store) || ALL_BRANCHES[0];
@@ -1528,7 +1541,8 @@ function GunghoLeaderBoard({ orders, groupKeyFn, title, icon = Award }) {
 }
 
 function DaiSuBaoCao({ currentUser, orders }) {
-  const mine = orders.filter((o) => o.createdBy === currentUser.id);
+  const isAdmin = currentUser.role === "admin";
+  const mine = isAdmin ? orders : orders.filter((o) => o.createdBy === currentUser.id);
   const paid = mine.filter((o) => o.status === "da_thanh_toan");
   const revenue = paid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
   const commission = paid.reduce((s, o) => s + (o.commissionAmount || 0), 0);
@@ -1642,8 +1656,9 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
 }
 
 function XuLyDuocGiao({ currentUser, orders, onConfirm, onForward, onDecline }) {
+  const isAdmin = currentUser.role === "admin";
   const mine = orders
-    .filter((o) => o.assignedHandler === currentUser.id && ["cho_xu_ly", "dang_cham_soc"].includes(o.status))
+    .filter((o) => (isAdmin || o.assignedHandler === currentUser.id) && ["cho_xu_ly", "dang_cham_soc"].includes(o.status))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   return (
     <div>
@@ -1691,8 +1706,9 @@ function OrderListCard({ order, group }) {
 function XuLyDonHang({ currentUser, orders }) {
   const [groupKey, setGroupKey] = useState("cho_xac_nhan");
   const [phoneQuery, setPhoneQuery] = useState("");
+  const isAdmin = currentUser.role === "admin";
 
-  const mine = orders.filter((o) => o.assignedHandler === currentUser.id);
+  const mine = isAdmin ? orders : orders.filter((o) => o.assignedHandler === currentUser.id);
   const activeGroup = ORDER_GROUPS.find((g) => g.key === groupKey);
   const filtered = mine
     .filter((o) => activeGroup.statuses.includes(o.status))
@@ -1742,7 +1758,8 @@ function XuLyDonHang({ currentUser, orders }) {
 }
 
 function XuLyBaoCao({ currentUser, orders }) {
-  const mine = orders.filter((o) => o.assignedHandler === currentUser.id);
+  const isAdmin = currentUser.role === "admin";
+  const mine = isAdmin ? orders : orders.filter((o) => o.assignedHandler === currentUser.id);
   const byProduct = new Map();
   mine.forEach((o) => {
     const cur = byProduct.get(o.product) || 0;
