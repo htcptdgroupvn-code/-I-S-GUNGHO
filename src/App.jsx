@@ -739,7 +739,7 @@ function DangerButton({ children, className = "", ...props }) {
 function Toast({ toast }) {
   if (!toast) return null;
   return (
-    <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg animate-[fadeIn_.15s_ease-out]">
+    <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg animate-[fadeIn_.15s_ease-out]" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
       {toast}
     </div>
   );
@@ -1143,7 +1143,7 @@ export default function App() {
     <div className="min-h-[600px] bg-slate-50">
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       {/* top bar */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-30">
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-teal-800 text-white flex items-center justify-center shrink-0">
