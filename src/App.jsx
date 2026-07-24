@@ -786,9 +786,7 @@ function LoginScreen({ onLogin }) {
     <div className="min-h-[600px] flex items-center justify-center bg-slate-50 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-teal-800 text-white flex items-center justify-center mx-auto mb-3">
-            <TrendingUp size={26} />
-          </div>
+          <img src="/logo.png" alt="Phú Tài Đức Group" className="h-16 mx-auto mb-3 object-contain" />
           <h1 className="text-2xl font-semibold text-slate-800">Gungho Sales</h1>
           <p className="text-sm text-slate-500 mt-1">Đăng nhập bằng mã nhân viên</p>
         </div>
