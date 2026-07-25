@@ -261,6 +261,49 @@ const P = {
   VTNN: ["Phân NPK Hàn Việt", "Phân NPK Hà Lan", "Phân đạm cánh diều (Đạm trắng và đạm vàng)", "Phân hữu cơ cánh diều", "Một số sản phẩm phân bón khác"],
 };
 
+// Quy định thưởng Gung Ho riêng cho 4 sản phẩm thuộc Khối xe máy (Phú Tài Đức 1-10)
+// Xe máy: thưởng theo mức giảm giá/xe, phân biệt theo loại xe
+function computeXeMayRewardPerUnit(vehicleType, discountPerUnit) {
+  const threshold = vehicleType === "ga_con" ? 400000 : 300000; // xe ga/côn: 400k, xe số/điện: 300k
+  return Number(discountPerUnit) <= threshold ? 200000 : 100000;
+}
+// Bảo hiểm xe máy: thưởng theo thời hạn hợp đồng
+function baoHiemRewardPerUnit(years) {
+  return years === 2 ? 20000 : years === 3 ? 25000 : 15000;
+}
+// Phụ tùng bán lẻ / Dịch vụ sửa chữa / Phụ kiện ô tô: % doanh thu nếu KHÔNG giảm giá, 0đ nếu có giảm giá (xem ServiceRevenueForm)
+const XE_MAY_SPECIAL_PRODUCTS = [P.XE_MAY, P.BAO_HIEM_XE_MAY, P.PHU_TUNG, P.SUA_CHUA_XE_MAY];
+
+// Quy định thưởng Gung Ho riêng cho 4 sản phẩm thuộc Khối ô tô
+// Xe mới ô tô: thưởng 900.000đ/xe, tỷ lệ hưởng theo mức giảm giá ngoài chính sách
+function otoRewardPerUnit(discountPerUnit) {
+  const d = Number(discountPerUnit) || 0;
+  const base = 900000;
+  if (d <= 0) return base; // không giảm giá ngoài chính sách: 100%
+  if (d <= 2000000) return Math.round(base * 0.7); // ≤2.000.000đ: 70%
+  return Math.round(base * 0.5); // >2.000.000đ: 50%
+}
+// Bảo hiểm ô tô: hoa hồng = 82% x mức chiết khấu chính sách (do THT thông báo, nhập tay) x doanh thu
+function baoHiemOTOReward(revenue, hasDiscount, policyRatePercent) {
+  if (hasDiscount) return 0;
+  const gunghoRate = (0.82 * (Number(policyRatePercent) || 0)) / 100;
+  return Math.round(Number(revenue || 0) * gunghoRate);
+}
+const OTO_SPECIAL_PRODUCTS = [P.O_TO, P.BAO_HIEM_O_TO, P.PHU_KIEN_O_TO, P.SUA_CHUA_O_TO];
+
+// Quy định thưởng Gung Ho riêng cho các sản phẩm thuộc Khối HTC
+// Đặc sản địa phương / Phòng nghỉ / Tiệc lưu động - nhà hàng - ăn sáng: 3% doanh thu (không phân biệt giảm giá)
+// Vé máy bay: theo số lượng vé, phân biệt khách lẻ (15.000đ/vé) và khách đoàn (10.000đ/vé)
+function veMayBayRewardPerUnit(customerType) {
+  return customerType === "doan" ? 10000 : 15000;
+}
+// Tour nội địa: 500.000đ/hợp đồng thành công
+const TOUR_REWARD_PER_CONTRACT = 500000;
+const HTC_SPECIAL_PRODUCTS = [P.DAC_SAN, P.PHONG_NGHI, P.TIEC, P.VE_MAY_BAY, P.TOUR];
+// VYC: Sản phẩm thời trang — 5% doanh thu. Vật tư nông nghiệp: Phân bón — 2% doanh thu.
+const VYC_SPECIAL_PRODUCTS = [P.VYC];
+const VTNN_SPECIAL_PRODUCTS = P.VTNN;
+
 function sumRevenue(orders, productNames) {
   const set = new Set(Array.isArray(productNames) ? productNames : [productNames]);
   return orders.filter((o) => o.status === "da_thanh_toan" && set.has(o.product)).reduce((s, o) => s + (o.finalAmount ?? o.totalAmount ?? 0), 0);
@@ -2027,6 +2070,20 @@ function ChtBaoCao({ currentUser, orders }) {
 // ---------------------------------------------------------------------------
 
 function AccountingCard({ order, onConfirm, onReject }) {
+  if (
+    XE_MAY_SPECIAL_PRODUCTS.includes(order.product) ||
+    OTO_SPECIAL_PRODUCTS.includes(order.product) ||
+    HTC_SPECIAL_PRODUCTS.includes(order.product) ||
+    VYC_SPECIAL_PRODUCTS.includes(order.product) ||
+    VTNN_SPECIAL_PRODUCTS.includes(order.product)
+  ) {
+    return <XeMaySpecialAccountingCard order={order} onConfirm={onConfirm} onReject={onReject} />;
+  }
+  return <GenericAccountingCard order={order} onConfirm={onConfirm} onReject={onReject} />;
+}
+
+// ---- Sản phẩm thông thường (giữ nguyên form cũ) ----
+function GenericAccountingCard({ order, onConfirm, onReject }) {
   const [amount, setAmount] = useState("");
   const [discount, setDiscount] = useState(0);
   const [commission, setCommission] = useState(0);
@@ -2083,6 +2140,447 @@ function AccountingCard({ order, onConfirm, onReject }) {
           <XCircle size={15} /> Không thanh toán
         </DangerButton>
       </div>
+    </Card>
+  );
+}
+
+// ---- Xe máy, xe đạp/máy điện: thưởng theo mức giảm giá/xe ----
+function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
+  const [vehicleType, setVehicleType] = useState("so_dien");
+  const [quantity, setQuantity] = useState(1);
+  const [unitPrice, setUnitPrice] = useState("");
+  const [discountPerUnit, setDiscountPerUnit] = useState(0);
+  const [error, setError] = useState("");
+
+  const qty = Number(quantity) || 0;
+  const price = Number(unitPrice) || 0;
+  const discPerUnit = Number(discountPerUnit) || 0;
+  const totalAmount = qty * price;
+  const totalDiscount = qty * discPerUnit;
+  const rewardPerUnit = computeXeMayRewardPerUnit(vehicleType, discPerUnit);
+  const totalCommission = qty * rewardPerUnit;
+
+  const handleConfirm = () => {
+    if (qty <= 0 || price <= 0) { setError("Vui lòng nhập số lượng và giá hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, { amount: totalAmount, discountAmount: totalDiscount, commissionAmount: totalCommission, quantity: qty, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <SelectField label="Loại xe" value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
+          <option value="so_dien">Xe số, xe điện (ngưỡng giảm giá 300.000đ/xe)</option>
+          <option value="ga_con">Xe ga, xe côn (ngưỡng giảm giá 400.000đ/xe)</option>
+        </SelectField>
+        <TextField label="Số lượng xe" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <TextField label="Giá / xe (đ)" type="number" min="0" required value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
+        <TextField label="Chiết khấu / xe (đ)" type="number" min="0" value={discountPerUnit} onChange={(e) => setDiscountPerUnit(e.target.value)} />
+      </div>
+      <div className="grid sm:grid-cols-3 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">Tổng tiền hàng</p>
+          <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
+        </div>
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">Thưởng/xe (tự tính)</p>
+          <p className="text-sm font-semibold text-slate-800">{fmtMoney(rewardPerUnit)}</p>
+        </div>
+        <div className="bg-amber-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-700">Tổng hoa hồng</p>
+          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+// ---- Bảo hiểm xe máy: thưởng theo thời hạn hợp đồng ----
+function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote }) {
+  const [years, setYears] = useState(1);
+  const [quantity, setQuantity] = useState(1);
+  const [unitPrice, setUnitPrice] = useState("");
+  const [error, setError] = useState("");
+
+  const qty = Number(quantity) || 0;
+  const price = Number(unitPrice) || 0;
+  const totalAmount = qty * price;
+  const rewardPerUnit = baoHiemRewardPerUnit(Number(years));
+  const totalCommission = qty * rewardPerUnit;
+
+  const handleConfirm = () => {
+    if (qty <= 0 || price <= 0) { setError("Vui lòng nhập số lượng và giá hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, { amount: totalAmount, discountAmount: 0, commissionAmount: totalCommission, quantity: qty, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <SelectField label="Thời hạn bảo hiểm" value={years} onChange={(e) => setYears(Number(e.target.value))}>
+          <option value={1}>1 năm — thưởng 15.000đ/bảo hiểm</option>
+          <option value={2}>2 năm — thưởng 20.000đ/bảo hiểm</option>
+          <option value={3}>3 năm — thưởng 25.000đ/bảo hiểm</option>
+        </SelectField>
+        <TextField label="Số lượng bảo hiểm" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <TextField label="Giá / bảo hiểm (đ)" type="number" min="0" required value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">Tổng tiền hàng</p>
+          <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
+        </div>
+        <div className="bg-amber-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-700">Tổng hoa hồng</p>
+          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+// ---- Doanh thu theo tỷ lệ %: dùng chung cho Phụ tùng bán lẻ / Dịch vụ sửa chữa xe máy (5%), Phụ kiện ô tô (9%) ----
+function ServiceRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercent = 5 }) {
+  const [amount, setAmount] = useState("");
+  const [hasDiscount, setHasDiscount] = useState(false);
+  const [discount, setDiscount] = useState(0);
+  const [error, setError] = useState("");
+
+  const revenue = Number(amount) || 0;
+  const totalCommission = hasDiscount ? 0 : Math.round(revenue * (ratePercent / 100));
+  const totalDiscount = hasDiscount ? Number(discount) || 0 : 0;
+
+  const handleConfirm = () => {
+    if (revenue <= 0) { setError("Vui lòng nhập doanh thu hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, { amount: revenue, discountAmount: totalDiscount, commissionAmount: totalCommission, quantity: 1, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <TextField label="Doanh thu (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+        <label className="flex items-center gap-2 mt-6">
+          <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} className="w-4 h-4 accent-teal-800" />
+          <span className="text-sm text-slate-700">Đơn hàng có giảm giá</span>
+        </label>
+        {hasDiscount && (
+          <TextField label="Số tiền giảm giá (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+        )}
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">{hasDiscount ? "Có giảm giá — chỉ ghi nhận chỉ tiêu" : `Không giảm giá — thưởng ${ratePercent}% doanh thu`}</p>
+        </div>
+        <div className={`rounded-lg px-3 py-2 ${hasDiscount ? "bg-slate-50" : "bg-amber-50"}`}>
+          <p className={`text-xs ${hasDiscount ? "text-slate-500" : "text-amber-700"}`}>Tổng hoa hồng</p>
+          <p className={`text-sm font-semibold ${hasDiscount ? "text-slate-600" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+// ---- Xe mới ô tô: thưởng 900.000đ/xe theo mức giảm giá ngoài chính sách ----
+function OTOMoiForm({ order, onConfirm, onReject, note, setNote }) {
+  const [quantity, setQuantity] = useState(1);
+  const [unitPrice, setUnitPrice] = useState("");
+  const [discountPerUnit, setDiscountPerUnit] = useState(0);
+  const [error, setError] = useState("");
+
+  const qty = Number(quantity) || 0;
+  const price = Number(unitPrice) || 0;
+  const discPerUnit = Number(discountPerUnit) || 0;
+  const totalAmount = qty * price;
+  const totalDiscount = qty * discPerUnit;
+  const rewardPerUnit = otoRewardPerUnit(discPerUnit);
+  const totalCommission = qty * rewardPerUnit;
+  const tierLabel = discPerUnit <= 0 ? "100% (không giảm giá ngoài chính sách)" : discPerUnit <= 2000000 ? "70% (giảm giá ≤ 2.000.000đ)" : "50% (giảm giá > 2.000.000đ)";
+
+  const handleConfirm = () => {
+    if (qty <= 0 || price <= 0) { setError("Vui lòng nhập số lượng và giá hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, { amount: totalAmount, discountAmount: totalDiscount, commissionAmount: totalCommission, quantity: qty, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <TextField label="Số lượng xe" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <TextField label="Giá / xe (đ)" type="number" min="0" required value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
+        <TextField label="Giảm giá ngoài chính sách / xe (đ)" type="number" min="0" value={discountPerUnit} onChange={(e) => setDiscountPerUnit(e.target.value)} />
+      </div>
+      <div className="grid sm:grid-cols-3 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">Tổng tiền hàng</p>
+          <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
+        </div>
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">Mức hưởng</p>
+          <p className="text-sm font-semibold text-slate-800">{tierLabel}</p>
+        </div>
+        <div className="bg-amber-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-700">Tổng hoa hồng</p>
+          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+// ---- Bảo hiểm ô tô: hoa hồng = 82% x mức chiết khấu chính sách (THT thông báo) x doanh thu ----
+function BaoHiemOTOForm({ order, onConfirm, onReject, note, setNote }) {
+  const [amount, setAmount] = useState("");
+  const [policyRate, setPolicyRate] = useState("");
+  const [hasDiscount, setHasDiscount] = useState(false);
+  const [discount, setDiscount] = useState(0);
+  const [error, setError] = useState("");
+
+  const revenue = Number(amount) || 0;
+  const totalCommission = baoHiemOTOReward(revenue, hasDiscount, policyRate);
+  const totalDiscount = hasDiscount ? Number(discount) || 0 : 0;
+
+  const handleConfirm = () => {
+    if (revenue <= 0) { setError("Vui lòng nhập doanh thu bảo hiểm hợp lệ."); return; }
+    if (!hasDiscount && !policyRate) { setError("Vui lòng nhập mức chiết khấu theo chính sách THT."); return; }
+    setError("");
+    onConfirm(order.id, { amount: revenue, discountAmount: totalDiscount, commissionAmount: totalCommission, quantity: 1, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <TextField label="Doanh thu bảo hiểm (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+        <TextField label="Mức chiết khấu theo chính sách THT (%)" type="number" min="0" step="0.1" value={policyRate} onChange={(e) => setPolicyRate(e.target.value)} placeholder="Do THT thông báo theo từng thời điểm" disabled={hasDiscount} />
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} className="w-4 h-4 accent-teal-800" />
+          <span className="text-sm text-slate-700">Đơn hàng có giảm giá</span>
+        </label>
+        {hasDiscount && (
+          <TextField label="Số tiền giảm giá (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+        )}
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">{hasDiscount ? "Có giảm giá — chỉ ghi nhận chỉ tiêu" : "Hoa hồng = 82% × mức chiết khấu chính sách × doanh thu"}</p>
+        </div>
+        <div className={`rounded-lg px-3 py-2 ${hasDiscount ? "bg-slate-50" : "bg-amber-50"}`}>
+          <p className={`text-xs ${hasDiscount ? "text-slate-500" : "text-amber-700"}`}>Tổng hoa hồng</p>
+          <p className={`text-sm font-semibold ${hasDiscount ? "text-slate-600" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+// ---- Doanh thu × % cố định, không phân biệt giảm giá — dùng cho Đặc sản địa phương / Phòng nghỉ / Tiệc ----
+function FlatRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercent }) {
+  const [amount, setAmount] = useState("");
+  const [error, setError] = useState("");
+
+  const revenue = Number(amount) || 0;
+  const totalCommission = Math.round(revenue * (ratePercent / 100));
+
+  const handleConfirm = () => {
+    if (revenue <= 0) { setError("Vui lòng nhập doanh thu hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, { amount: revenue, discountAmount: 0, commissionAmount: totalCommission, quantity: 1, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <TextField label="Doanh thu (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+        <div className="bg-amber-50 rounded-lg px-3 py-2 flex flex-col justify-center">
+          <p className="text-xs text-amber-700">Hoa hồng ({ratePercent}% doanh thu)</p>
+          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+// ---- Vé máy bay: thưởng theo số lượng vé, phân biệt khách lẻ / khách đoàn ----
+function VeMayBayForm({ order, onConfirm, onReject, note, setNote }) {
+  const [customerType, setCustomerType] = useState("le");
+  const [quantity, setQuantity] = useState(1);
+  const [unitPrice, setUnitPrice] = useState("");
+  const [error, setError] = useState("");
+
+  const qty = Number(quantity) || 0;
+  const price = Number(unitPrice) || 0;
+  const totalAmount = qty * price;
+  const rewardPerUnit = veMayBayRewardPerUnit(customerType);
+  const totalCommission = qty * rewardPerUnit;
+
+  const handleConfirm = () => {
+    if (qty <= 0) { setError("Vui lòng nhập số lượng vé hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, { amount: totalAmount, discountAmount: 0, commissionAmount: totalCommission, quantity: qty, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <SelectField label="Loại khách" value={customerType} onChange={(e) => setCustomerType(e.target.value)}>
+          <option value="le">Khách lẻ — 15.000đ/vé</option>
+          <option value="doan">Khách đoàn thông thường — 10.000đ/vé</option>
+        </SelectField>
+        <TextField label="Số lượng vé" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <TextField label="Giá / vé (đ)" type="number" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">Tổng tiền vé</p>
+          <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
+        </div>
+        <div className="bg-amber-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-700">Tổng hoa hồng</p>
+          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+// ---- Tour nội địa: 500.000đ/hợp đồng thành công ----
+function TourForm({ order, onConfirm, onReject, note, setNote }) {
+  const [quantity, setQuantity] = useState(1);
+  const [unitPrice, setUnitPrice] = useState("");
+  const [error, setError] = useState("");
+
+  const qty = Number(quantity) || 0;
+  const price = Number(unitPrice) || 0;
+  const totalAmount = qty * price;
+  const totalCommission = qty * TOUR_REWARD_PER_CONTRACT;
+
+  const handleConfirm = () => {
+    if (qty <= 0) { setError("Vui lòng nhập số lượng hợp đồng hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, { amount: totalAmount, discountAmount: 0, commissionAmount: totalCommission, quantity: qty, note });
+  };
+
+  return (
+    <>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <TextField label="Số lượng hợp đồng thành công" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+        <TextField label="Giá trị / hợp đồng (đ)" type="number" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-slate-500">Tổng doanh thu</p>
+          <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
+        </div>
+        <div className="bg-amber-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-amber-700">Tổng hoa hồng (500.000đ/hợp đồng)</p>
+          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+      </div>
+    </>
+  );
+}
+
+function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
+  const [note, setNote] = useState("");
+  const isOTO = OTO_SPECIAL_PRODUCTS.includes(order.product);
+  const isHTC = HTC_SPECIAL_PRODUCTS.includes(order.product);
+  const isVYC = VYC_SPECIAL_PRODUCTS.includes(order.product);
+  const isVTNN = VTNN_SPECIAL_PRODUCTS.includes(order.product);
+  const groupLabel = isOTO ? "ô tô" : isHTC ? "HTC" : isVYC ? "VYC" : isVTNN ? "Vật tư nông nghiệp" : "xe máy";
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="font-medium text-slate-800">{order.customerName}</p>
+          <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
+          <p className="text-xs text-slate-400 mt-1">Đại sứ: {order.createdByName} · Người chăm sóc: {order.assignedHandlerName}</p>
+          {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
+        </div>
+        <Badge className="bg-teal-50 text-teal-700 border-teal-200">Quy định thưởng Khối {groupLabel}</Badge>
+      </div>
+      {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.PHU_TUNG && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.SUA_CHUA_XE_MAY && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.O_TO && <OTOMoiForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.PHU_KIEN_O_TO && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={9} />}
+      {order.product === P.BAO_HIEM_O_TO && <BaoHiemOTOForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.SUA_CHUA_O_TO && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {(order.product === P.DAC_SAN || order.product === P.PHONG_NGHI || order.product === P.TIEC) && (
+        <FlatRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={3} />
+      )}
+      {order.product === P.VE_MAY_BAY && <VeMayBayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.TOUR && <TourForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {VYC_SPECIAL_PRODUCTS.includes(order.product) && (
+        <FlatRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />
+      )}
+      {VTNN_SPECIAL_PRODUCTS.includes(order.product) && (
+        <FlatRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={2} />
+      )}
     </Card>
   );
 }
