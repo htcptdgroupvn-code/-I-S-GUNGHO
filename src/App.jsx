@@ -1769,6 +1769,7 @@ function OrderListCard({ order, group }) {
 function XuLyDonHang({ currentUser, orders }) {
   const [groupKey, setGroupKey] = useState("cho_xac_nhan");
   const [phoneQuery, setPhoneQuery] = useState("");
+  const [storeFilter, setStoreFilter] = useState("");
   const isAdmin = currentUser.role === "admin";
 
   const mine = isAdmin ? orders : orders.filter((o) => o.assignedHandler === currentUser.id);
@@ -1776,20 +1777,35 @@ function XuLyDonHang({ currentUser, orders }) {
   const filtered = mine
     .filter((o) => activeGroup.statuses.includes(o.status))
     .filter((o) => !phoneQuery.trim() || (o.customerPhone || "").includes(phoneQuery.trim()))
+    .filter((o) => !storeFilter || o.store === storeFilter)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   return (
     <div>
-      <SectionTitle icon={ClipboardList} title="Đơn hàng" subtitle={`${mine.length} đơn hàng được giao cho bạn`} />
+      <SectionTitle icon={ClipboardList} title="Đơn hàng" subtitle={isAdmin ? `${mine.length} đơn hàng (tất cả nhân viên)` : `${mine.length} đơn hàng được giao cho bạn`} />
 
-      <div className="relative mb-3">
-        <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          value={phoneQuery}
-          onChange={(e) => setPhoneQuery(e.target.value)}
-          placeholder="Lọc theo SĐT..."
-          className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-        />
+      <div className="flex flex-wrap gap-3 mb-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={phoneQuery}
+            onChange={(e) => setPhoneQuery(e.target.value)}
+            placeholder="Lọc theo SĐT..."
+            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+          />
+        </div>
+        {isAdmin && (
+          <div className="w-full sm:w-64">
+            <select
+              value={storeFilter}
+              onChange={(e) => setStoreFilter(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+            >
+              <option value="">— Tất cả chi nhánh —</option>
+              {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-1 overflow-x-auto mb-4 border-b border-slate-200">
@@ -2072,13 +2088,28 @@ function AccountingCard({ order, onConfirm, onReject }) {
 }
 
 function KeToanChoXacNhan({ currentUser, orders, onConfirm, onReject }) {
+  const isAdmin = currentUser.role === "admin";
+  const [storeFilter, setStoreFilter] = useState("");
+  const effectiveStore = isAdmin ? storeFilter : currentUser.store;
+
   const pending = orders
     .filter((o) => o.status === "cho_ke_toan")
-    .filter((o) => !currentUser.store || o.store === currentUser.store)
+    .filter((o) => !effectiveStore || o.store === effectiveStore)
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
   return (
     <div>
-      <SectionTitle icon={ClipboardCheck} title="Đơn hàng chờ xác nhận thanh toán" subtitle={currentUser.store ? `${pending.length} đơn tại ${currentUser.store}` : `${pending.length} đơn đang chờ`} />
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
+        <SectionTitle icon={ClipboardCheck} title="Đơn hàng chờ xác nhận thanh toán" subtitle={effectiveStore ? `${pending.length} đơn tại ${effectiveStore}` : `${pending.length} đơn đang chờ (tất cả chi nhánh)`} />
+        {isAdmin && (
+          <div className="w-full sm:w-64">
+            <SelectField label="Lọc theo chi nhánh" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)}>
+              <option value="">— Tất cả chi nhánh —</option>
+              {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+            </SelectField>
+          </div>
+        )}
+      </div>
       {pending.length === 0 ? (
         <EmptyState icon={ClipboardCheck} text="Không có đơn hàng nào chờ xác nhận." />
       ) : (
@@ -2091,9 +2122,13 @@ function KeToanChoXacNhan({ currentUser, orders, onConfirm, onReject }) {
 }
 
 function KeToanLichSu({ currentUser, orders }) {
+  const isAdmin = currentUser.role === "admin";
+  const [storeFilter, setStoreFilter] = useState("");
+  const effectiveStore = isAdmin ? storeFilter : currentUser.store;
+
   const done = orders
     .filter((o) => ["da_thanh_toan", "khong_thanh_toan"].includes(o.status))
-    .filter((o) => !currentUser.store || o.store === currentUser.store)
+    .filter((o) => !effectiveStore || o.store === effectiveStore)
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const totalRevenue = done.filter((o) => o.status === "da_thanh_toan").reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
   const totalCommission = done.reduce((s, o) => s + (o.commissionAmount || 0), 0);
@@ -2121,9 +2156,17 @@ function KeToanLichSu({ currentUser, orders }) {
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <SectionTitle icon={Landmark} title="Lịch sử giao dịch" subtitle={currentUser.store} />
+        <SectionTitle icon={Landmark} title="Lịch sử giao dịch" subtitle={effectiveStore || (isAdmin ? "Tất cả chi nhánh" : "")} />
         <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
+      {isAdmin && (
+        <div className="sm:w-64">
+          <SelectField label="Lọc theo chi nhánh" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)}>
+            <option value="">— Tất cả chi nhánh —</option>
+            {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+          </SelectField>
+        </div>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <MetricCard label="Tổng doanh thu" value={fmtMoney(totalRevenue)} icon={TrendingUp} accent="teal" />
         <MetricCard label="Tổng hoa hồng đã chi" value={fmtMoney(totalCommission)} icon={Wallet} accent="amber" />
