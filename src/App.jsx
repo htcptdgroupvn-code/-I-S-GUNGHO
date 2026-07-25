@@ -839,7 +839,7 @@ function LoginScreen({ onLogin }) {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <img src="/logo.png" alt="Phú Tài Đức Group" className="h-16 mx-auto mb-3 object-contain" />
-          <h1 className="text-2xl font-semibold text-slate-800">Gungho Sales</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">GUNGHO PTD</h1>
           <p className="text-sm text-slate-500 mt-1">Đăng nhập bằng mã nhân viên</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
@@ -1211,7 +1211,7 @@ export default function App() {
               <TrendingUp size={18} />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-800 leading-tight">Gungho Sales</p>
+              <p className="text-sm font-semibold text-slate-800 leading-tight">GUNGHO PTD</p>
               <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
             </div>
           </div>
