@@ -142,6 +142,7 @@ function exportToExcel(sheets, filename) {
 function orderExportRow(o) {
   return {
     "Mã đơn hàng": o.orderCode || o.id,
+    "Mã khách hàng": o.customerCode || "",
     "Khách hàng": o.customerName,
     "SĐT": o.customerPhone,
     "Khối công ty": o.company,
@@ -535,23 +536,30 @@ function genOrderCode(existingOrders) {
   const todayCount = existingOrders.filter((o) => o.orderCode?.startsWith(prefix)).length;
   return `${prefix}${String(todayCount + 1).padStart(4, "0")}`;
 }
+
+// Mã khách hàng riêng theo từng Đại sứ: <mã nhân viên>-<số thứ tự>, ví dụ ds1-001
+function genCustomerCode(existingCustomers, employeeCode) {
+  const prefix = `${employeeCode || "KH"}-`;
+  const count = existingCustomers.filter((c) => c.customerCode?.startsWith(prefix)).length;
+  return `${prefix}${String(count + 1).padStart(3, "0")}`;
+}
 const userById = (id) => USERS.find((u) => u.id === id);
 
 // ---- Supabase data mapping (DB dùng snake_case, app dùng camelCase) ----
 
 function mapEmployee(e) {
-  return { id: e.id, name: e.name, role: e.role, store: e.store, position: e.position };
+  return { id: e.id, employeeCode: e.employee_code, name: e.name, role: e.role, store: e.store, position: e.position };
 }
 function mapCustomer(c) {
   return {
-    id: c.id, name: c.name, phone: c.phone, address: c.address,
+    id: c.id, customerCode: c.customer_code, name: c.name, phone: c.phone, address: c.address,
     createdBy: c.created_by, createdByName: c.created_by_name, createdAt: c.created_at,
   };
 }
 function mapOrder(o) {
   return {
     id: o.id, orderCode: o.order_code, customerId: o.customer_id,
-    customerName: o.customer_name, customerPhone: o.customer_phone,
+    customerName: o.customer_name, customerPhone: o.customer_phone, customerCode: o.customer_code,
     company: o.company, store: o.store, storeAddress: o.store_address,
     product: o.product, quantity: o.quantity,
     totalAmount: Number(o.total_amount) || 0,
@@ -570,7 +578,7 @@ function mapNotification(n) {
 
 function orderToRow(o) {
   return {
-    order_code: o.orderCode, customer_id: o.customerId, customer_name: o.customerName, customer_phone: o.customerPhone,
+    order_code: o.orderCode, customer_id: o.customerId, customer_name: o.customerName, customer_phone: o.customerPhone, customer_code: o.customerCode,
     company: o.company, store: o.store, store_address: o.storeAddress, product: o.product,
     quantity: o.quantity ?? 0, total_amount: o.totalAmount ?? 0, discount_amount: o.discountAmount ?? 0,
     final_amount: o.finalAmount ?? null, commission_amount: o.commissionAmount ?? 0,
@@ -952,9 +960,11 @@ export default function App() {
   // ---- action handlers -----------------------------------------------
 
   const addCustomer = async ({ name, phone, address }) => {
+    const myCustomers = customers.filter((c) => c.createdBy === currentUser.id);
+    const customerCode = genCustomerCode(myCustomers, currentUser.employeeCode);
     const { data, error } = await supabase
       .from("customers")
-      .insert({ name, phone, address, created_by: currentUser.id, created_by_name: currentUser.name })
+      .insert({ name, phone, address, customer_code: customerCode, created_by: currentUser.id, created_by_name: currentUser.name })
       .select()
       .single();
     if (error) {
@@ -974,7 +984,7 @@ export default function App() {
     const status = handler ? "cho_xu_ly" : "cho_phan_cong";
     const orderDraft = {
       orderCode: genOrderCode(orders),
-      customerId, customerName: cust?.name, customerPhone: cust?.phone,
+      customerId, customerName: cust?.name, customerPhone: cust?.phone, customerCode: cust?.customerCode,
       company, store, storeAddress, product, totalAmount: 0,
       createdBy: currentUser.id, createdByName: currentUser.name,
       assignedHandler: handler?.id || null, assignedHandlerName: handler?.name || null,
@@ -1295,7 +1305,10 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {mine.map((c) => (
             <Card key={c.id} className="p-4">
-              <p className="font-medium text-slate-800">{c.name}</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium text-slate-800">{c.name}</p>
+                {c.customerCode && <Badge className="bg-teal-50 text-teal-700 border-teal-200">{c.customerCode}</Badge>}
+              </div>
               <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Phone size={13} /> {c.phone}</p>
               {c.address && <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><MapPin size={13} /> {c.address}</p>}
               <p className="text-[11px] text-slate-400 mt-2">Thêm lúc {fmtDate(c.createdAt)}</p>
@@ -1330,7 +1343,10 @@ function AdminCustomerGroups({ customers }) {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {list.map((c) => (
               <Card key={c.id} className="p-4">
-                <p className="font-medium text-slate-800">{c.name}</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-slate-800">{c.name}</p>
+                  {c.customerCode && <Badge className="bg-teal-50 text-teal-700 border-teal-200">{c.customerCode}</Badge>}
+                </div>
                 <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Phone size={13} /> {c.phone}</p>
                 {c.address && <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><MapPin size={13} /> {c.address}</p>}
                 <p className="text-[11px] text-slate-400 mt-2">Thêm lúc {fmtDate(c.createdAt)}</p>
@@ -1352,7 +1368,6 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const isAdmin = currentUser.role === "admin";
   const mineCustomers = isAdmin ? customers : customers.filter((c) => c.createdBy === currentUser.id);
   const mineOrders = (isAdmin ? orders : orders.filter((o) => o.createdBy === currentUser.id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const handlers = USERS.filter((u) => u.role === "xu_ly");
 
   const defaultBranch = branchInfo(currentUser.store) || ALL_BRANCHES[0];
   const defaultProducts = COMPANIES.find((c) => c.name === defaultBranch.company)?.products || [];
@@ -1371,6 +1386,8 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const branchesForCompany = COMPANIES.find((c) => c.name === form.company)?.branches || [];
   const productsForCompany = COMPANIES.find((c) => c.name === form.company)?.products || [];
   const selectedBranch = branchInfo(form.store);
+  const storeHandlers = USERS.filter((u) => u.role === "xu_ly" && u.store === form.store);
+  const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === "xu_ly");
 
   const submit = async () => {
     if (!form.customerId || !form.product.trim()) {
@@ -1412,7 +1429,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
             <SelectField label="Khách hàng" required value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })}>
               <option value="">— Chọn khách hàng —</option>
               {mineCustomers.map((c) => (
-                <option key={c.id} value={c.id}>{c.name} — {c.phone}</option>
+                <option key={c.id} value={c.id}>{c.customerCode ? `[${c.customerCode}] ` : ""}{c.name} — {c.phone}</option>
               ))}
             </SelectField>
             <SelectField label="Khối công ty / đối tác" required value={form.company} onChange={(e) => {
@@ -1420,11 +1437,11 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
               const co = COMPANIES.find((c) => c.name === newCompany);
               const firstBranch = co?.branches[0];
               setCustomProduct(false);
-              setForm({ ...form, company: newCompany, store: firstBranch?.name || "", product: co?.products[0] || "" });
+              setForm({ ...form, company: newCompany, store: firstBranch?.name || "", product: co?.products[0] || "", handlerId: "" });
             }}>
               {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
             </SelectField>
-            <SelectField label="Cửa hàng / chi nhánh" required value={form.store} onChange={(e) => setForm({ ...form, store: e.target.value })}>
+            <SelectField label="Cửa hàng / chi nhánh" required value={form.store} onChange={(e) => setForm({ ...form, store: e.target.value, handlerId: "" })}>
               {branchesForCompany.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
             </SelectField>
             {selectedBranch?.address && (
@@ -1860,7 +1877,8 @@ function XuLyBaoCao({ currentUser, orders }) {
 
 function AssignCard({ order, onAssign }) {
   const [handlerId, setHandlerId] = useState("");
-  const handlers = USERS.filter((u) => u.role === "xu_ly");
+  const storeHandlers = USERS.filter((u) => u.role === "xu_ly" && u.store === order.store);
+  const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === "xu_ly");
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
