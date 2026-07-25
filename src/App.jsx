@@ -910,6 +910,14 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
+    const interval = setInterval(() => {
+      refreshAll();
+    }, 15000); // tự động làm mới dữ liệu mỗi 15 giây
+    return () => clearInterval(interval);
+  }, [currentUser, refreshAll]);
+
+  useEffect(() => {
+    if (!currentUser) return;
     const defaults = { dai_su: "khach_hang", xu_ly: "duoc_giao", cht: "phan_cong", ke_toan: "cho_xac_nhan", admin: "bao_cao_cht" };
     setTab(defaults[currentUser.role]);
   }, [currentUser]);
@@ -1156,7 +1164,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <GhostButton onClick={refreshAll} className="!px-2.5 hidden sm:inline-flex" title="Làm mới dữ liệu">
+            <GhostButton onClick={refreshAll} className="!px-2.5" title="Làm mới dữ liệu">
               <RefreshCw size={14} />
             </GhostButton>
             <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} />
