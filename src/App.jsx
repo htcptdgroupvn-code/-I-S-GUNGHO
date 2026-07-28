@@ -27,6 +27,11 @@ function shortMoney(n) {
   if (v >= 1_000) return (v / 1_000).toFixed(0) + " k";
   return String(v);
 }
+// Nhãn rút gọn dùng cho trục/chú thích của các biểu đồ recharts còn lại (tránh tràn chữ)
+function truncateLabel(s, n = 14) {
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
 
 // ---------------------------------------------------------------------------
 // Static demo data
@@ -1644,45 +1649,65 @@ function OrderRow({ order, showCommission, right }) {
 // ĐẠI SỨ — Báo cáo
 // ---------------------------------------------------------------------------
 
-// Nhãn rút gọn hiển thị trên trục Y của biểu đồ ngang (tránh tràn chữ)
-function truncateLabel(s, n = 14) {
-  if (!s) return "";
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+// ---------------------------------------------------------------------------
+// Bảng xếp hạng dạng "leaderboard": huy chương top 3, tên đầy đủ không bị cắt,
+// thanh màu gradient theo hạng — dùng chung cho doanh thu & điểm thi đua Gungho
+// ---------------------------------------------------------------------------
+const RANK_MEDAL = ["🥇", "🥈", "🥉"];
+const RANK_BAR_STYLE = [
+  "from-amber-400 to-amber-600",
+  "from-slate-300 to-slate-500",
+  "from-orange-400 to-orange-600",
+];
+const RANK_ROW_BG = ["bg-amber-50/60", "bg-slate-50", "bg-orange-50/60"];
+
+function RankedLeaderRow({ rank, name, valueLabel, percent }) {
+  const isTop3 = rank < 3;
+  return (
+    <div className={`flex items-center gap-3 rounded-xl px-2.5 py-2 transition hover:bg-slate-50 ${isTop3 ? RANK_ROW_BG[rank] : ""}`}>
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-base font-bold">
+        {isTop3 ? (
+          <span className="text-xl leading-none">{RANK_MEDAL[rank]}</span>
+        ) : (
+          <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center text-xs">{rank + 1}</span>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <p className={`text-sm truncate ${isTop3 ? "font-semibold text-slate-800" : "font-medium text-slate-700"}`} title={name}>{name}</p>
+          <p className={`text-sm shrink-0 font-semibold ${isTop3 ? "text-slate-800" : "text-slate-600"}`}>{valueLabel}</p>
+        </div>
+        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${isTop3 ? RANK_BAR_STYLE[rank] : "from-teal-500 to-teal-700"}`}
+            style={{ width: `${Math.max(percent, 3)}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function LeaderBoard({ orders, groupKeyFn, title, icon }) {
   const rows = buildRevenueLeaderboard(orders, groupKeyFn).slice(0, 8);
-  const chartData = [...rows].reverse().map((r) => ({ ...r, shortName: truncateLabel(r.name) }));
+  const max = rows[0]?.revenue || 0;
   return (
     <Card className="p-4 sm:p-5">
       <SectionTitle icon={icon} title={title} />
       {rows.length === 0 ? (
         <EmptyState icon={Award} text="Chưa có dữ liệu xếp hạng." />
       ) : (
-        <>
-          <div style={{ width: "100%", height: Math.max(rows.length * 34, 140) }}>
-            <ResponsiveContainer>
-              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                <XAxis type="number" tickFormatter={shortMoney} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="shortName" width={100} tick={{ fontSize: 12, fill: "#475569" }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v) => fmtMoney(v)} {...CHART_TOOLTIP_STYLE} />
-                <Bar dataKey="revenue" radius={[0, 6, 6, 0]} maxBarSize={22}>
-                  {chartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="space-y-1.5 mt-3 pt-3 border-t border-slate-100">
-            {rows.slice(0, 3).map((r, i) => (
-              <div key={r.name} className="flex items-center gap-2 text-xs">
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center font-semibold shrink-0 ${i === 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{i + 1}</span>
-                <span className="text-slate-600 truncate flex-1">{r.name}</span>
-                <span className="font-semibold text-slate-800 shrink-0">{fmtMoney(r.revenue)}</span>
-              </div>
-            ))}
-          </div>
-        </>
+        <div className="space-y-1">
+          {rows.map((r, i) => (
+            <RankedLeaderRow
+              key={r.name}
+              rank={i}
+              name={r.name}
+              valueLabel={fmtMoney(r.revenue)}
+              percent={max > 0 ? (r.revenue / max) * 100 : 0}
+            />
+          ))}
+        </div>
       )}
     </Card>
   );
@@ -1690,35 +1715,24 @@ function LeaderBoard({ orders, groupKeyFn, title, icon }) {
 
 function GunghoLeaderBoard({ orders, groupKeyFn, title, icon = Award }) {
   const rows = buildTDLeaderboard(orders, groupKeyFn).slice(0, 8);
-  const chartData = [...rows].reverse().map((r) => ({ ...r, shortName: truncateLabel(r.name) }));
+  const max = rows[0]?.td || 0;
   return (
     <Card className="p-4 sm:p-5">
       <SectionTitle icon={icon} title={title} subtitle="TD = BX×0.5 + DVX/500.000 + BO×2 + DVO/1.000.000 + NH/1.000.000 + KS/500.000 + TO×20 + V×1 + VYC/300.000 + VT/500.000" />
       {rows.length === 0 ? (
         <EmptyState icon={Award} text="Chưa có dữ liệu xếp hạng." />
       ) : (
-        <>
-          <div style={{ width: "100%", height: Math.max(rows.length * 34, 140) }}>
-            <ResponsiveContainer>
-              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="shortName" width={100} tick={{ fontSize: 12, fill: "#475569" }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v) => `${Number(v).toFixed(1)} điểm`} {...CHART_TOOLTIP_STYLE} />
-                <Bar dataKey="td" fill="#d97706" radius={[0, 6, 6, 0]} maxBarSize={22} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="space-y-1.5 mt-3 pt-3 border-t border-slate-100">
-            {rows.slice(0, 3).map((r, i) => (
-              <div key={r.name} className="flex items-center gap-2 text-xs">
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center font-semibold shrink-0 ${i === 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{i + 1}</span>
-                <span className="text-slate-600 truncate flex-1">{r.name}</span>
-                <span className="font-semibold text-slate-800 shrink-0">{r.td.toFixed(1)} điểm</span>
-              </div>
-            ))}
-          </div>
-        </>
+        <div className="space-y-1">
+          {rows.map((r, i) => (
+            <RankedLeaderRow
+              key={r.name}
+              rank={i}
+              name={r.name}
+              valueLabel={`${r.td.toFixed(1)} điểm`}
+              percent={max > 0 ? (r.td / max) * 100 : 0}
+            />
+          ))}
+        </div>
       )}
     </Card>
   );
