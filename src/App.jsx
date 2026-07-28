@@ -2149,7 +2149,11 @@ function ChtPhanCong({ currentUser, orders, onAssign }) {
 }
 
 function ChtBaoCao({ currentUser, orders }) {
-  const paid = orders.filter((o) => o.status === "da_thanh_toan");
+  // Thanh lọc xem báo cáo theo công ty: để trống ("") = xem toàn tập đoàn
+  const [viewCompany, setViewCompany] = useState("");
+  const viewOrders = viewCompany ? orders.filter((o) => o.company === viewCompany) : orders;
+
+  const paid = viewOrders.filter((o) => o.status === "da_thanh_toan");
   const revenue = paid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
   const defaultCompany = branchInfo(currentUser.store)?.company || COMPANIES[0].name;
   const [tplCompany, setTplCompany] = useState(defaultCompany);
@@ -2184,13 +2188,40 @@ function ChtBaoCao({ currentUser, orders }) {
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <SectionTitle icon={BarChart3} title="Báo cáo doanh số Gungho" subtitle="Toàn bộ khối công ty & chi nhánh" />
+        <SectionTitle
+          icon={BarChart3}
+          title="Báo cáo doanh số Gungho"
+          subtitle={viewCompany ? `Đang xem: ${viewCompany}` : "Toàn bộ khối công ty & chi nhánh (Tập đoàn)"}
+        />
         <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
+
+      <Card className="p-3 sm:p-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Building2 size={16} className="text-teal-700 shrink-0" />
+          <p className="text-sm font-medium text-slate-700 shrink-0">Xem báo cáo &amp; xếp hạng theo:</p>
+          <div className="w-full sm:w-72">
+            <select
+              value={viewCompany}
+              onChange={(e) => setViewCompany(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+            >
+              <option value="">— Tất cả (toàn tập đoàn) —</option>
+              {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          {viewCompany && (
+            <button onClick={() => setViewCompany("")} className="text-xs text-teal-700 hover:underline shrink-0">
+              ← Xem lại toàn tập đoàn
+            </button>
+          )}
+        </div>
+      </Card>
+
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <MetricCard label="Tổng doanh thu" value={fmtMoney(revenue)} icon={Building2} accent="teal" />
         <MetricCard label="Đơn đã hoàn tất" value={paid.length} icon={CheckCircle2} accent="amber" />
-        <MetricCard label="Tổng số đơn hàng" value={orders.length} icon={ShoppingBag} accent="indigo" />
+        <MetricCard label="Tổng số đơn hàng" value={viewOrders.length} icon={ShoppingBag} accent="indigo" />
       </div>
 
       <Card className="p-4">
@@ -2225,16 +2256,24 @@ function ChtBaoCao({ currentUser, orders }) {
       </Card>
 
       <div className="grid lg:grid-cols-2 gap-5">
-        <RevenueTrendChart orders={orders} />
-        <ProductMixPieChart orders={orders} />
+        <RevenueTrendChart orders={viewOrders} title={viewCompany ? `Xu hướng doanh thu — ${viewCompany}` : "Xu hướng doanh thu 6 tháng gần đây (toàn tập đoàn)"} />
+        <ProductMixPieChart orders={viewOrders} title={viewCompany ? `Tỉ trọng sản phẩm — ${viewCompany}` : "Tỉ trọng doanh thu theo sản phẩm (toàn tập đoàn)"} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
-        <LeaderBoard orders={orders} groupKeyFn={(o) => o.company} title="Xếp hạng theo khối công ty" icon={Building2} />
-        <LeaderBoard orders={orders} groupKeyFn={(o) => o.store} title="Xếp hạng theo cửa hàng / chi nhánh" icon={Store} />
+        {viewCompany ? (
+          <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.store} title={`Xếp hạng theo cửa hàng / chi nhánh — ${viewCompany}`} icon={Store} />
+        ) : (
+          <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.company} title="Xếp hạng theo khối công ty" icon={Building2} />
+        )}
+        <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.product} title={viewCompany ? `Xếp hạng sản phẩm bán chạy — ${viewCompany}` : "Xếp hạng sản phẩm bán chạy"} icon={ShoppingBag} />
       </div>
-      <GunghoLeaderBoard orders={orders} groupKeyFn={(o) => o.createdByName} title="Bảng xếp hạng Gungho (theo điểm thi đua)" icon={Award} />
-      <LeaderBoard orders={orders} groupKeyFn={(o) => o.product} title="Xếp hạng sản phẩm bán chạy" icon={ShoppingBag} />
+      <GunghoLeaderBoard
+        orders={viewOrders}
+        groupKeyFn={(o) => o.createdByName}
+        title={viewCompany ? `Bảng xếp hạng Gungho — nhân viên ${viewCompany}` : "Bảng xếp hạng Gungho (toàn tập đoàn, theo điểm thi đua)"}
+        icon={Award}
+      />
     </div>
   );
 }
