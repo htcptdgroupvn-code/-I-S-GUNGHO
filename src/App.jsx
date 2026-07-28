@@ -1224,41 +1224,32 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  const BASE_NAV = [
+  const GROUP_BAN_HANG = [
     { key: "khach_hang", label: "Khách hàng", icon: Users },
     { key: "don_hang_ds", label: "Đơn hàng của tôi", icon: ClipboardList },
     { key: "bao_cao_ds", label: "Báo cáo", icon: BarChart3 },
   ];
-  const NAV = {
-    dai_su: BASE_NAV,
-    xu_ly: [
-      ...BASE_NAV,
-      { key: "duoc_giao", label: "Đơn được giao", icon: Inbox },
-      { key: "don_hang_cskh", label: "Đơn hàng CSKH", icon: ClipboardList },
-      { key: "bao_cao_cskh", label: "Báo cáo CSKH", icon: BarChart3 },
-    ],
-    cht: [
-      ...BASE_NAV,
-      { key: "phan_cong", label: "Phân công", icon: ArrowRightLeft },
-      { key: "bao_cao_cht", label: "Báo cáo doanh số", icon: BarChart3 },
-    ],
-    ke_toan: [
-      ...BASE_NAV,
-      { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
-      { key: "lich_su", label: "Lịch sử", icon: Wallet },
-    ],
-    admin: [
-      ...BASE_NAV,
-      { key: "duoc_giao", label: "Đơn được giao", icon: Inbox },
-      { key: "don_hang_cskh", label: "Đơn hàng CSKH", icon: ClipboardList },
-      { key: "bao_cao_cskh", label: "Báo cáo CSKH", icon: BarChart3 },
-      { key: "phan_cong", label: "Phân công", icon: ArrowRightLeft },
-      { key: "bao_cao_cht", label: "Báo cáo doanh số", icon: BarChart3 },
-      { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
-      { key: "lich_su", label: "Lịch sử", icon: Wallet },
-    ],
+  const GROUP_CSKH = [
+    { key: "duoc_giao", label: "Đơn được giao", icon: Inbox },
+    { key: "don_hang_cskh", label: "Đơn hàng CSKH", icon: ClipboardList },
+    { key: "bao_cao_cskh", label: "Báo cáo CSKH", icon: BarChart3 },
+  ];
+  const GROUP_QUAN_LY = [
+    { key: "phan_cong", label: "Phân công", icon: ArrowRightLeft },
+    { key: "bao_cao_cht", label: "Báo cáo doanh số", icon: BarChart3 },
+  ];
+  const GROUP_KE_TOAN = [
+    { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
+    { key: "lich_su", label: "Lịch sử", icon: Wallet },
+  ];
+  const NAV_GROUPS = {
+    dai_su: [GROUP_BAN_HANG],
+    xu_ly: [GROUP_BAN_HANG, GROUP_CSKH],
+    cht: [GROUP_BAN_HANG, GROUP_QUAN_LY],
+    ke_toan: [GROUP_BAN_HANG, GROUP_KE_TOAN],
+    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN],
   };
-  const navItems = NAV[currentUser.role];
+  const navGroups = NAV_GROUPS[currentUser.role];
 
   return (
     <div className="min-h-[600px] bg-slate-50">
@@ -1295,20 +1286,27 @@ export default function App() {
             </div>
           </div>
         </div>
-        {/* tabs */}
-        <div className="max-w-6xl mx-auto px-4 pb-2 flex gap-1.5 overflow-x-auto">
-          {navItems.map((n) => (
-            <button
-              key={n.key}
-              onClick={() => setTab(n.key)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition ${
-                tab === n.key
-                  ? "bg-teal-800 text-white shadow-sm shadow-teal-900/20"
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-              }`}
-            >
-              <n.icon size={15} /> {n.label}
-            </button>
+        {/* tabs — nhóm theo khu vực chức năng, tự xuống dòng trên máy tính/tablet, cuộn ngang trên điện thoại */}
+        <div className="max-w-6xl mx-auto px-4 pb-2 flex items-center gap-1 overflow-x-auto sm:flex-wrap sm:overflow-visible">
+          {navGroups.map((group, gi) => (
+            <React.Fragment key={gi}>
+              {gi > 0 && <span className="w-px h-6 bg-slate-200 mx-1.5 shrink-0" />}
+              <div className="flex items-center gap-1 shrink-0">
+                {group.map((n) => (
+                  <button
+                    key={n.key}
+                    onClick={() => setTab(n.key)}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition ${
+                      tab === n.key
+                        ? "bg-teal-800 text-white shadow-sm shadow-teal-900/20"
+                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    }`}
+                  >
+                    <n.icon size={15} /> {n.label}
+                  </button>
+                ))}
+              </div>
+            </React.Fragment>
           ))}
         </div>
       </div>
