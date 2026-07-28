@@ -1803,7 +1803,10 @@ function ProductMixPieChart({ orders, title = "Tỉ trọng doanh thu theo sản
 
 function DaiSuBaoCao({ currentUser, orders }) {
   const isAdmin = currentUser.role === "admin";
-  const mine = isAdmin ? orders : orders.filter((o) => o.createdBy === currentUser.id);
+  // Thanh lọc theo công ty — chỉ hiển thị và có tác dụng khi xem bằng tài khoản Admin
+  const [viewCompany, setViewCompany] = useState("");
+  const viewOrders = isAdmin && viewCompany ? orders.filter((o) => o.company === viewCompany) : orders;
+  const mine = isAdmin ? viewOrders : orders.filter((o) => o.createdBy === currentUser.id);
   const paid = mine.filter((o) => o.status === "da_thanh_toan");
   const revenue = paid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
   const commission = paid.reduce((s, o) => s + (o.commissionAmount || 0), 0);
@@ -1828,9 +1831,38 @@ function DaiSuBaoCao({ currentUser, orders }) {
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <SectionTitle icon={BarChart3} title="Báo cáo tổng hợp" subtitle="Toàn bộ đơn hàng, hoa hồng và xếp hạng" />
+        <SectionTitle
+          icon={BarChart3}
+          title="Báo cáo tổng hợp"
+          subtitle={isAdmin && viewCompany ? `Đang xem: ${viewCompany}` : "Toàn bộ đơn hàng, hoa hồng và xếp hạng"}
+        />
         <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
+
+      {isAdmin && (
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Building2 size={16} className="text-teal-700 shrink-0" />
+            <p className="text-sm font-medium text-slate-700 shrink-0">Xem báo cáo &amp; xếp hạng theo:</p>
+            <div className="w-full sm:w-72">
+              <select
+                value={viewCompany}
+                onChange={(e) => setViewCompany(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+              >
+                <option value="">— Tất cả (toàn tập đoàn) —</option>
+                {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+            {viewCompany && (
+              <button onClick={() => setViewCompany("")} className="text-xs text-teal-700 hover:underline shrink-0">
+                ← Xem lại toàn tập đoàn
+              </button>
+            )}
+          </div>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard label="Tổng doanh thu" value={fmtMoney(revenue)} icon={TrendingUp} accent="teal" />
         <MetricCard label="Hoa hồng nhận được" value={fmtMoney(commission)} icon={Wallet} accent="amber" />
@@ -1875,14 +1907,23 @@ function DaiSuBaoCao({ currentUser, orders }) {
       </Card>
 
       <div className="grid lg:grid-cols-2 gap-5">
-        <RevenueTrendChart orders={mine} />
-        <ProductMixPieChart orders={mine} />
+        <RevenueTrendChart orders={mine} title={isAdmin && viewCompany ? `Xu hướng doanh thu — ${viewCompany}` : "Xu hướng doanh thu 6 tháng gần đây"} />
+        <ProductMixPieChart orders={mine} title={isAdmin && viewCompany ? `Tỉ trọng sản phẩm — ${viewCompany}` : "Tỉ trọng doanh thu theo sản phẩm"} />
       </div>
 
-      <GunghoLeaderBoard orders={orders} groupKeyFn={(o) => o.createdByName} title="Bảng xếp hạng Gungho (theo điểm thi đua)" icon={Award} />
+      <GunghoLeaderBoard
+        orders={viewOrders}
+        groupKeyFn={(o) => o.createdByName}
+        title={isAdmin && viewCompany ? `Bảng xếp hạng Gungho — nhân viên ${viewCompany}` : "Bảng xếp hạng Gungho (theo điểm thi đua)"}
+        icon={Award}
+      />
       <div className="grid lg:grid-cols-2 gap-5">
-        <LeaderBoard orders={orders} groupKeyFn={(o) => o.company} title="Doanh thu theo khối công ty" icon={Building2} />
-        <LeaderBoard orders={orders} groupKeyFn={(o) => o.product} title="Xếp hạng theo sản phẩm" icon={ShoppingBag} />
+        {isAdmin && viewCompany ? (
+          <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.store} title={`Doanh thu theo cửa hàng / chi nhánh — ${viewCompany}`} icon={Store} />
+        ) : (
+          <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.company} title="Doanh thu theo khối công ty" icon={Building2} />
+        )}
+        <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.product} title="Xếp hạng theo sản phẩm" icon={ShoppingBag} />
       </div>
     </div>
   );
