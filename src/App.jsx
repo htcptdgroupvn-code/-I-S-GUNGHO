@@ -7,6 +7,26 @@ import {
   ArrowRightLeft, RefreshCw, Phone, MapPin, Plus, ChevronRight, Inbox,
   ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download
 } from "lucide-react";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  PieChart, Pie, Cell, AreaChart, Area, Legend,
+} from "recharts";
+
+// ---------------------------------------------------------------------------
+// Bảng màu dùng chung cho biểu đồ (đồng bộ với bảng màu giao diện teal/amber/...)
+// ---------------------------------------------------------------------------
+const CHART_COLORS = ["#0f766e", "#d97706", "#4f46e5", "#e11d48", "#0891b2", "#65a30d", "#9333ea", "#ea580c"];
+const CHART_TOOLTIP_STYLE = {
+  contentStyle: { borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 4px 16px rgba(15,23,42,.08)", fontSize: 12.5 },
+  labelStyle: { color: "#334155", fontWeight: 600, marginBottom: 4 },
+};
+function shortMoney(n) {
+  const v = Number(n) || 0;
+  if (v >= 1_000_000_000) return (v / 1_000_000_000).toFixed(1).replace(/\.0$/, "") + " tỷ";
+  if (v >= 1_000_000) return (v / 1_000_000).toFixed(1).replace(/\.0$/, "") + " tr";
+  if (v >= 1_000) return (v / 1_000).toFixed(0) + " k";
+  return String(v);
+}
 
 // ---------------------------------------------------------------------------
 // Static demo data
@@ -128,6 +148,37 @@ function buildTDLeaderboard(orders, groupKeyFn) {
     map.get(key).push(o);
   });
   return [...map.entries()].map(([name, list]) => ({ name, td: computeTD(list) })).sort((a, b) => b.td - a.td);
+}
+
+// Dựng dữ liệu xu hướng doanh thu theo tháng (6 tháng gần nhất) cho biểu đồ đường/vùng
+function buildMonthlyTrend(orders, monthsBack = 6) {
+  const paid = orders.filter((o) => o.status === "da_thanh_toan");
+  const now = new Date();
+  const buckets = [];
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    buckets.push({ y: d.getFullYear(), m: d.getMonth(), label: `Th${d.getMonth() + 1}/${String(d.getFullYear()).slice(2)}`, revenue: 0, count: 0 });
+  }
+  paid.forEach((o) => {
+    const d = new Date(o.updatedAt || o.createdAt);
+    const b = buckets.find((x) => x.y === d.getFullYear() && x.m === d.getMonth());
+    if (b) {
+      b.revenue += o.finalAmount ?? o.totalAmount ?? 0;
+      b.count += 1;
+    }
+  });
+  return buckets;
+}
+
+// Dựng dữ liệu tỉ trọng doanh thu theo nhóm sản phẩm (dùng cho biểu đồ tròn)
+function buildProductMix(orders, topN = 6) {
+  const rows = buildRevenueLeaderboard(orders, (o) => o.product);
+  const top = rows.slice(0, topN);
+  const rest = rows.slice(topN);
+  const restSum = rest.reduce((s, r) => s + r.revenue, 0);
+  const result = top.map((r) => ({ name: r.name, value: r.revenue }));
+  if (restSum > 0) result.push({ name: "Khác", value: restSum });
+  return result.filter((r) => r.value > 0);
 }
 
 function exportToExcel(sheets, filename) {
@@ -671,17 +722,17 @@ function StatusBadge({ status }) {
 }
 
 function Card({ children, className = "" }) {
-  return <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>{children}</div>;
+  return <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow duration-200 ${className}`}>{children}</div>;
 }
 
 function SectionTitle({ icon: Icon, title, subtitle }) {
   return (
     <div className="flex items-start gap-3 mb-4">
-      <div className="w-10 h-10 rounded-lg bg-teal-800 text-white flex items-center justify-center shrink-0">
-        <Icon size={20} />
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center shrink-0 shadow-sm shadow-teal-900/20">
+        <Icon size={19} />
       </div>
       <div>
-        <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
+        <h2 className="text-lg font-semibold text-slate-800 tracking-tight">{title}</h2>
         {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
       </div>
     </div>
@@ -691,7 +742,9 @@ function SectionTitle({ icon: Icon, title, subtitle }) {
 function EmptyState({ icon: Icon, text }) {
   return (
     <div className="flex flex-col items-center justify-center py-14 text-slate-400">
-      <Icon size={34} className="mb-2 opacity-60" />
+      <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center mb-3">
+        <Icon size={26} className="opacity-50" />
+      </div>
       <p className="text-sm">{text}</p>
     </div>
   );
@@ -699,19 +752,21 @@ function EmptyState({ icon: Icon, text }) {
 
 function MetricCard({ label, value, icon: Icon, accent = "teal" }) {
   const accents = {
-    teal: "text-teal-700 bg-teal-50",
-    amber: "text-amber-700 bg-amber-50",
-    indigo: "text-indigo-700 bg-indigo-50",
-    rose: "text-rose-700 bg-rose-50",
+    teal: { text: "text-teal-700", bg: "bg-teal-50", ring: "ring-teal-600/10", bar: "bg-teal-600" },
+    amber: { text: "text-amber-700", bg: "bg-amber-50", ring: "ring-amber-600/10", bar: "bg-amber-600" },
+    indigo: { text: "text-indigo-700", bg: "bg-indigo-50", ring: "ring-indigo-600/10", bar: "bg-indigo-600" },
+    rose: { text: "text-rose-700", bg: "bg-rose-50", ring: "ring-rose-600/10", bar: "bg-rose-600" },
   };
+  const a = accents[accent] || accents.teal;
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${accents[accent]}`}>
-        <Icon size={18} />
+    <div className="relative bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow duration-200 p-4 flex items-center gap-3 overflow-hidden">
+      <span className={`absolute left-0 top-0 bottom-0 w-1 ${a.bar}`} />
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ring-4 ${a.bg} ${a.text} ${a.ring}`}>
+        <Icon size={19} />
       </div>
       <div className="min-w-0">
         <p className="text-xs text-slate-500 truncate">{label}</p>
-        <p className="text-lg font-semibold text-slate-800 truncate">{value}</p>
+        <p className="text-lg font-semibold text-slate-800 truncate tracking-tight">{value}</p>
       </div>
     </div>
   );
@@ -723,7 +778,7 @@ function TextField({ label, ...props }) {
       <span className="block text-xs font-medium text-slate-600 mb-1">{label}</span>
       <input
         {...props}
-        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
       />
     </label>
   );
@@ -735,7 +790,7 @@ function SelectField({ label, children, ...props }) {
       <span className="block text-xs font-medium text-slate-600 mb-1">{label}</span>
       <select
         {...props}
-        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
       >
         {children}
       </select>
@@ -750,7 +805,7 @@ function TextAreaField({ label, ...props }) {
       <textarea
         {...props}
         rows={2}
-        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
       />
     </label>
   );
@@ -760,7 +815,7 @@ function PrimaryButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-800 text-white text-sm font-medium hover:bg-teal-900 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-b from-teal-700 to-teal-800 text-white text-sm font-medium shadow-sm shadow-teal-900/20 hover:from-teal-800 hover:to-teal-900 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
     >
       {children}
     </button>
@@ -770,7 +825,7 @@ function GhostButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
+      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
     >
       {children}
     </button>
@@ -780,7 +835,7 @@ function DangerButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-rose-300 text-rose-700 text-sm font-medium hover:bg-rose-50 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
+      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-300 bg-white text-rose-700 text-sm font-medium hover:bg-rose-50 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
     >
       {children}
     </button>
@@ -790,7 +845,7 @@ function DangerButton({ children, className = "", ...props }) {
 function Toast({ toast }) {
   if (!toast) return null;
   return (
-    <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg animate-[fadeIn_.15s_ease-out]" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
+    <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg shadow-slate-900/30 animate-[fadeIn_.15s_ease-out]" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
       {toast}
     </div>
   );
@@ -835,14 +890,14 @@ function LoginScreen({ onLogin }) {
   };
 
   return (
-    <div className="min-h-[600px] flex items-center justify-center bg-slate-50 px-4 py-10">
+    <div className="min-h-[600px] flex items-center justify-center bg-gradient-to-b from-teal-50 via-slate-50 to-slate-50 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <img src="/logo.png" alt="Phú Tài Đức Group" className="h-16 mx-auto mb-3 object-contain" />
-          <h1 className="text-2xl font-semibold text-slate-800">GUNGHO PTD</h1>
+          <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">GUNGHO PTD</h1>
           <p className="text-sm text-slate-500 mt-1">Đăng nhập bằng mã nhân viên</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-900/5 p-5 space-y-4">
           <TextField label="Mã nhân viên" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ví dụ: ds1" onKeyDown={(e) => e.key === "Enter" && handleSubmit()} />
           <TextField label="Mật khẩu" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••" onKeyDown={(e) => e.key === "Enter" && handleSubmit()} />
           {error && (
@@ -870,7 +925,7 @@ function NotifBell({ notifications, currentUser, onMarkRead }) {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative w-9 h-9 rounded-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50"
+        className="relative w-9 h-9 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition"
       >
         <Bell size={17} className="text-slate-600" />
         {unread > 0 && (
@@ -1204,14 +1259,14 @@ export default function App() {
     <div className="min-h-[600px] bg-slate-50">
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       {/* top bar */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="bg-white/90 backdrop-blur border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-teal-800 text-white flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center shrink-0 shadow-sm shadow-teal-900/25">
               <TrendingUp size={18} />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-800 leading-tight">GUNGHO PTD</p>
+              <p className="text-sm font-semibold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
               <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
             </div>
           </div>
@@ -1222,27 +1277,29 @@ export default function App() {
             </GhostButton>
             <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} />
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-teal-800 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-sm">
                 {currentUser.name.split(" ").slice(-1)[0][0]}
               </div>
               <div className="hidden md:block text-right leading-tight">
                 <p className="text-xs font-medium text-slate-800">{currentUser.name}</p>
                 <p className="text-[11px] text-slate-400">{currentUser.store || ROLE_META[currentUser.role].short}</p>
               </div>
-              <button onClick={handleLogout} className="w-8 h-8 rounded-lg border border-slate-200 flex items-center justify-center hover:bg-slate-50" title="Đổi tài khoản">
+              <button onClick={handleLogout} className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition" title="Đổi tài khoản">
                 <LogOut size={14} className="text-slate-500" />
               </button>
             </div>
           </div>
         </div>
         {/* tabs */}
-        <div className="max-w-6xl mx-auto px-4 flex gap-1 overflow-x-auto">
+        <div className="max-w-6xl mx-auto px-4 pb-2 flex gap-1.5 overflow-x-auto">
           {navItems.map((n) => (
             <button
               key={n.key}
               onClick={() => setTab(n.key)}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition ${
-                tab === n.key ? "border-teal-800 text-teal-800" : "border-transparent text-slate-500 hover:text-slate-700"
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition ${
+                tab === n.key
+                  ? "bg-teal-800 text-white shadow-sm shadow-teal-900/20"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
               }`}
             >
               <n.icon size={15} /> {n.label}
@@ -1461,7 +1518,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
       </div>
 
       {mineCustomers.length === 0 && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <div className="mb-4 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
           <AlertCircle size={15} /> Bạn cần thêm khách hàng trước khi tạo đơn hàng.
         </div>
       )}
@@ -1587,30 +1644,45 @@ function OrderRow({ order, showCommission, right }) {
 // ĐẠI SỨ — Báo cáo
 // ---------------------------------------------------------------------------
 
+// Nhãn rút gọn hiển thị trên trục Y của biểu đồ ngang (tránh tràn chữ)
+function truncateLabel(s, n = 14) {
+  if (!s) return "";
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
 function LeaderBoard({ orders, groupKeyFn, title, icon }) {
   const rows = buildRevenueLeaderboard(orders, groupKeyFn).slice(0, 8);
+  const chartData = [...rows].reverse().map((r) => ({ ...r, shortName: truncateLabel(r.name) }));
   return (
-    <Card className="p-4">
+    <Card className="p-4 sm:p-5">
       <SectionTitle icon={icon} title={title} />
       {rows.length === 0 ? (
         <EmptyState icon={Award} text="Chưa có dữ liệu xếp hạng." />
       ) : (
-        <div className="space-y-2">
-          {rows.map((r, i) => (
-            <div key={r.name} className="flex items-center gap-3">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${i < 3 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>
-                {i + 1}
+        <>
+          <div style={{ width: "100%", height: Math.max(rows.length * 34, 140) }}>
+            <ResponsiveContainer>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                <XAxis type="number" tickFormatter={shortMoney} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="shortName" width={100} tick={{ fontSize: 12, fill: "#475569" }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v) => fmtMoney(v)} {...CHART_TOOLTIP_STYLE} />
+                <Bar dataKey="revenue" radius={[0, 6, 6, 0]} maxBarSize={22}>
+                  {chartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="space-y-1.5 mt-3 pt-3 border-t border-slate-100">
+            {rows.slice(0, 3).map((r, i) => (
+              <div key={r.name} className="flex items-center gap-2 text-xs">
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center font-semibold shrink-0 ${i === 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{i + 1}</span>
+                <span className="text-slate-600 truncate flex-1">{r.name}</span>
+                <span className="font-semibold text-slate-800 shrink-0">{fmtMoney(r.revenue)}</span>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-700 truncate">{r.name}</p>
-                <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                  <div className="h-full bg-teal-700 rounded-full" style={{ width: `${(r.revenue / rows[0].revenue) * 100}%` }} />
-                </div>
-              </div>
-              <p className="text-sm font-semibold text-slate-800 shrink-0">{fmtMoney(r.revenue)}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </Card>
   );
@@ -1618,28 +1690,97 @@ function LeaderBoard({ orders, groupKeyFn, title, icon }) {
 
 function GunghoLeaderBoard({ orders, groupKeyFn, title, icon = Award }) {
   const rows = buildTDLeaderboard(orders, groupKeyFn).slice(0, 8);
-  const max = rows[0]?.td || 0;
+  const chartData = [...rows].reverse().map((r) => ({ ...r, shortName: truncateLabel(r.name) }));
   return (
-    <Card className="p-4">
+    <Card className="p-4 sm:p-5">
       <SectionTitle icon={icon} title={title} subtitle="TD = BX×0.5 + DVX/500.000 + BO×2 + DVO/1.000.000 + NH/1.000.000 + KS/500.000 + TO×20 + V×1 + VYC/300.000 + VT/500.000" />
       {rows.length === 0 ? (
         <EmptyState icon={Award} text="Chưa có dữ liệu xếp hạng." />
       ) : (
-        <div className="space-y-2">
-          {rows.map((r, i) => (
-            <div key={r.name} className="flex items-center gap-3">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${i < 3 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>
-                {i + 1}
+        <>
+          <div style={{ width: "100%", height: Math.max(rows.length * 34, 140) }}>
+            <ResponsiveContainer>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                <XAxis type="number" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="shortName" width={100} tick={{ fontSize: 12, fill: "#475569" }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v) => `${Number(v).toFixed(1)} điểm`} {...CHART_TOOLTIP_STYLE} />
+                <Bar dataKey="td" fill="#d97706" radius={[0, 6, 6, 0]} maxBarSize={22} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="space-y-1.5 mt-3 pt-3 border-t border-slate-100">
+            {rows.slice(0, 3).map((r, i) => (
+              <div key={r.name} className="flex items-center gap-2 text-xs">
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center font-semibold shrink-0 ${i === 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"}`}>{i + 1}</span>
+                <span className="text-slate-600 truncate flex-1">{r.name}</span>
+                <span className="font-semibold text-slate-800 shrink-0">{r.td.toFixed(1)} điểm</span>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-700 truncate">{r.name}</p>
-                <div className="h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                  <div className="h-full bg-amber-600 rounded-full" style={{ width: `${max > 0 ? (r.td / max) * 100 : 0}%` }} />
-                </div>
-              </div>
-              <p className="text-sm font-semibold text-slate-800 shrink-0">{r.td.toFixed(1)} điểm</p>
-            </div>
-          ))}
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Biểu đồ vùng thể hiện xu hướng doanh thu 6 tháng gần nhất
+function RevenueTrendChart({ orders, title = "Xu hướng doanh thu 6 tháng gần đây" }) {
+  const data = buildMonthlyTrend(orders, 6);
+  const hasData = data.some((d) => d.revenue > 0);
+  return (
+    <Card className="p-4 sm:p-5">
+      <SectionTitle icon={TrendingUp} title={title} />
+      {!hasData ? (
+        <EmptyState icon={TrendingUp} text="Chưa có đủ dữ liệu để hiển thị xu hướng." />
+      ) : (
+        <div style={{ width: "100%", height: 220 }}>
+          <ResponsiveContainer>
+            <AreaChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+              <defs>
+                <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0f766e" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#0f766e" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={shortMoney} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={48} />
+              <Tooltip formatter={(v) => fmtMoney(v)} {...CHART_TOOLTIP_STYLE} />
+              <Area type="monotone" dataKey="revenue" stroke="#0f766e" strokeWidth={2.5} fill="url(#revenueFill)" name="Doanh thu" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Biểu đồ tròn tỉ trọng doanh thu theo sản phẩm
+function ProductMixPieChart({ orders, title = "Tỉ trọng doanh thu theo sản phẩm" }) {
+  const data = buildProductMix(orders);
+  return (
+    <Card className="p-4 sm:p-5">
+      <SectionTitle icon={ShoppingBag} title={title} />
+      {data.length === 0 ? (
+        <EmptyState icon={ShoppingBag} text="Chưa có dữ liệu doanh thu." />
+      ) : (
+        <div style={{ width: "100%", height: 260 }}>
+          <ResponsiveContainer>
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
+                {data.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+              </Pie>
+              <Tooltip formatter={(v) => fmtMoney(v)} {...CHART_TOOLTIP_STYLE} />
+              <Legend
+                layout="vertical"
+                verticalAlign="middle"
+                align="right"
+                wrapperStyle={{ fontSize: 11.5, lineHeight: "20px", maxWidth: "45%" }}
+                formatter={(value) => <span className="text-slate-600">{truncateLabel(value, 22)}</span>}
+              />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
       )}
     </Card>
@@ -1719,9 +1860,16 @@ function DaiSuBaoCao({ currentUser, orders }) {
         )}
       </Card>
 
+      <div className="grid lg:grid-cols-2 gap-5">
+        <RevenueTrendChart orders={mine} />
+        <ProductMixPieChart orders={mine} />
+      </div>
+
       <GunghoLeaderBoard orders={orders} groupKeyFn={(o) => o.createdByName} title="Bảng xếp hạng Gungho (theo điểm thi đua)" icon={Award} />
-      <LeaderBoard orders={orders} groupKeyFn={(o) => o.company} title="Doanh thu theo khối công ty" icon={Building2} />
-      <LeaderBoard orders={orders} groupKeyFn={(o) => o.product} title="Xếp hạng theo sản phẩm" icon={ShoppingBag} />
+      <div className="grid lg:grid-cols-2 gap-5">
+        <LeaderBoard orders={orders} groupKeyFn={(o) => o.company} title="Doanh thu theo khối công ty" icon={Building2} />
+        <LeaderBoard orders={orders} groupKeyFn={(o) => o.product} title="Xếp hạng theo sản phẩm" icon={ShoppingBag} />
+      </div>
     </div>
   );
 }
@@ -1834,7 +1982,7 @@ function XuLyDonHang({ currentUser, orders }) {
             value={phoneQuery}
             onChange={(e) => setPhoneQuery(e.target.value)}
             placeholder="Lọc theo SĐT..."
-            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
           />
         </div>
         {isAdmin && (
@@ -1842,7 +1990,7 @@ function XuLyDonHang({ currentUser, orders }) {
             <select
               value={storeFilter}
               onChange={(e) => setStoreFilter(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
             >
               <option value="">— Tất cả chi nhánh —</option>
               {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
@@ -1911,19 +2059,24 @@ function XuLyBaoCao({ currentUser, orders }) {
         <MetricCard label="Đã hoàn tất" value={done} icon={CheckCircle2} accent="indigo" />
         <MetricCard label="Số sản phẩm khác nhau" value={byProduct.size} icon={ShoppingBag} accent="rose" />
       </div>
-      <Card className="p-4">
+      <Card className="p-4 sm:p-5">
         <p className="font-semibold text-slate-800 text-sm mb-3">Tình trạng xử lý theo sản phẩm</p>
         {rows.length === 0 ? (
           <EmptyState icon={ShoppingBag} text="Chưa có dữ liệu." />
         ) : (
-          <div className="space-y-2">
-            {rows.map(([p, c]) => (
-              <div key={p} className="flex items-center justify-between text-sm py-1.5 border-b border-slate-50 last:border-0">
-                <span className="text-slate-700">{p}</span>
-                <Badge className="bg-slate-100 text-slate-600 border-slate-200">{c} khách</Badge>
-              </div>
-            ))}
-          </div>
+          <>
+            <div style={{ width: "100%", height: Math.max(rows.length * 32, 140) }}>
+              <ResponsiveContainer>
+                <BarChart data={rows.map(([p, c]) => ({ name: truncateLabel(p, 18), count: c }))} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 12, fill: "#475569" }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(v) => `${v} khách`} {...CHART_TOOLTIP_STYLE} />
+                  <Bar dataKey="count" fill="#4f46e5" radius={[0, 6, 6, 0]} maxBarSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </>
         )}
       </Card>
     </div>
@@ -2057,8 +2210,15 @@ function ChtBaoCao({ currentUser, orders }) {
         </div>
       </Card>
 
-      <LeaderBoard orders={orders} groupKeyFn={(o) => o.company} title="Xếp hạng theo khối công ty" icon={Building2} />
-      <LeaderBoard orders={orders} groupKeyFn={(o) => o.store} title="Xếp hạng theo cửa hàng / chi nhánh" icon={Store} />
+      <div className="grid lg:grid-cols-2 gap-5">
+        <RevenueTrendChart orders={orders} />
+        <ProductMixPieChart orders={orders} />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <LeaderBoard orders={orders} groupKeyFn={(o) => o.company} title="Xếp hạng theo khối công ty" icon={Building2} />
+        <LeaderBoard orders={orders} groupKeyFn={(o) => o.store} title="Xếp hạng theo cửa hàng / chi nhánh" icon={Store} />
+      </div>
       <GunghoLeaderBoard orders={orders} groupKeyFn={(o) => o.createdByName} title="Bảng xếp hạng Gungho (theo điểm thi đua)" icon={Award} />
       <LeaderBoard orders={orders} groupKeyFn={(o) => o.product} title="Xếp hạng sản phẩm bán chạy" icon={ShoppingBag} />
     </div>
@@ -2122,7 +2282,7 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
           <TextField label={CATEGORY_LABELS[category]} type="number" min="0" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         )}
       </div>
-      <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 mt-3">
+      <div className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2 mt-3">
         <span className="text-sm text-slate-500">Thành tiền sau chiết khấu</span>
         <span className="text-sm font-semibold text-slate-800">{fmtMoney(finalAmount)}</span>
       </div>
@@ -2178,15 +2338,15 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
         <TextField label="Chiết khấu / xe (đ)" type="number" min="0" value={discountPerUnit} onChange={(e) => setDiscountPerUnit(e.target.value)} />
       </div>
       <div className="grid sm:grid-cols-3 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Tổng tiền hàng</p>
           <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
         </div>
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Thưởng/xe (tự tính)</p>
           <p className="text-sm font-semibold text-slate-800">{fmtMoney(rewardPerUnit)}</p>
         </div>
-        <div className="bg-amber-50 rounded-lg px-3 py-2">
+        <div className="bg-amber-50 rounded-xl px-3 py-2">
           <p className="text-xs text-amber-700">Tổng hoa hồng</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
@@ -2234,11 +2394,11 @@ function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote }) {
         <TextField label="Giá / bảo hiểm (đ)" type="number" min="0" required value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Tổng tiền hàng</p>
           <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
         </div>
-        <div className="bg-amber-50 rounded-lg px-3 py-2">
+        <div className="bg-amber-50 rounded-xl px-3 py-2">
           <p className="text-xs text-amber-700">Tổng hoa hồng</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
@@ -2285,10 +2445,10 @@ function ServiceRevenueForm({ order, onConfirm, onReject, note, setNote, ratePer
         )}
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">{hasDiscount ? "Có giảm giá — chỉ ghi nhận chỉ tiêu" : `Không giảm giá — thưởng ${ratePercent}% doanh thu`}</p>
         </div>
-        <div className={`rounded-lg px-3 py-2 ${hasDiscount ? "bg-slate-50" : "bg-amber-50"}`}>
+        <div className={`rounded-xl px-3 py-2 ${hasDiscount ? "bg-slate-50" : "bg-amber-50"}`}>
           <p className={`text-xs ${hasDiscount ? "text-slate-500" : "text-amber-700"}`}>Tổng hoa hồng</p>
           <p className={`text-sm font-semibold ${hasDiscount ? "text-slate-600" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
         </div>
@@ -2335,15 +2495,15 @@ function OTOMoiForm({ order, onConfirm, onReject, note, setNote }) {
         <TextField label="Giảm giá ngoài chính sách / xe (đ)" type="number" min="0" value={discountPerUnit} onChange={(e) => setDiscountPerUnit(e.target.value)} />
       </div>
       <div className="grid sm:grid-cols-3 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Tổng tiền hàng</p>
           <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
         </div>
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Mức hưởng</p>
           <p className="text-sm font-semibold text-slate-800">{tierLabel}</p>
         </div>
-        <div className="bg-amber-50 rounded-lg px-3 py-2">
+        <div className="bg-amber-50 rounded-xl px-3 py-2">
           <p className="text-xs text-amber-700">Tổng hoa hồng</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
@@ -2393,10 +2553,10 @@ function BaoHiemOTOForm({ order, onConfirm, onReject, note, setNote }) {
         )}
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">{hasDiscount ? "Có giảm giá — chỉ ghi nhận chỉ tiêu" : "Hoa hồng = 82% × mức chiết khấu chính sách × doanh thu"}</p>
         </div>
-        <div className={`rounded-lg px-3 py-2 ${hasDiscount ? "bg-slate-50" : "bg-amber-50"}`}>
+        <div className={`rounded-xl px-3 py-2 ${hasDiscount ? "bg-slate-50" : "bg-amber-50"}`}>
           <p className={`text-xs ${hasDiscount ? "text-slate-500" : "text-amber-700"}`}>Tổng hoa hồng</p>
           <p className={`text-sm font-semibold ${hasDiscount ? "text-slate-600" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
         </div>
@@ -2431,7 +2591,7 @@ function FlatRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercen
     <>
       <div className="grid sm:grid-cols-2 gap-3">
         <TextField label="Doanh thu (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
-        <div className="bg-amber-50 rounded-lg px-3 py-2 flex flex-col justify-center">
+        <div className="bg-amber-50 rounded-xl px-3 py-2 flex flex-col justify-center">
           <p className="text-xs text-amber-700">Hoa hồng ({ratePercent}% doanh thu)</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
@@ -2478,11 +2638,11 @@ function VeMayBayForm({ order, onConfirm, onReject, note, setNote }) {
         <TextField label="Giá / vé (đ)" type="number" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Tổng tiền vé</p>
           <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
         </div>
-        <div className="bg-amber-50 rounded-lg px-3 py-2">
+        <div className="bg-amber-50 rounded-xl px-3 py-2">
           <p className="text-xs text-amber-700">Tổng hoa hồng</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
@@ -2523,11 +2683,11 @@ function TourForm({ order, onConfirm, onReject, note, setNote }) {
         <TextField label="Giá trị / hợp đồng (đ)" type="number" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-lg px-3 py-2">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Tổng doanh thu</p>
           <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
         </div>
-        <div className="bg-amber-50 rounded-lg px-3 py-2">
+        <div className="bg-amber-50 rounded-xl px-3 py-2">
           <p className="text-xs text-amber-700">Tổng hoa hồng (500.000đ/hợp đồng)</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
