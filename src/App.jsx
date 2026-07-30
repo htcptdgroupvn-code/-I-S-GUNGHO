@@ -796,6 +796,90 @@ function TextField({ label, ...props }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Chuyển số tiền sang chữ tiếng Việt (hiển thị dưới các ô nhập tiền)
+// ---------------------------------------------------------------------------
+const CHU_SO_VN = ["không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín"];
+const DON_VI_NHOM_VN = ["", "nghìn", "triệu", "tỷ"];
+
+function docNhom3VN(so) {
+  const tram = Math.floor(so / 100);
+  const chuc = Math.floor((so % 100) / 10);
+  const donvi = so % 10;
+  let s = "";
+  if (tram > 0) {
+    s += CHU_SO_VN[tram] + " trăm";
+    if (chuc === 0 && donvi > 0) s += " linh";
+  }
+  if (chuc > 1) {
+    s += (s ? " " : "") + CHU_SO_VN[chuc] + " mươi";
+    if (donvi === 1) s += " mốt";
+    else if (donvi === 5) s += " lăm";
+    else if (donvi > 0) s += " " + CHU_SO_VN[donvi];
+  } else if (chuc === 1) {
+    s += (s ? " " : "") + "mười";
+    if (donvi === 1) s += " một";
+    else if (donvi === 5) s += " lăm";
+    else if (donvi > 0) s += " " + CHU_SO_VN[donvi];
+  } else if (chuc === 0 && donvi > 0) {
+    s += (s ? " " : "") + CHU_SO_VN[donvi];
+  }
+  return s.trim();
+}
+
+function soTienThanhChu(n) {
+  let so = Math.round(Number(n) || 0);
+  if (so === 0) return "";
+  const amDau = so < 0;
+  so = Math.abs(so);
+  const nhom = [];
+  while (so > 0) {
+    nhom.unshift(so % 1000);
+    so = Math.floor(so / 1000);
+  }
+  const total = nhom.length;
+  const parts = [];
+  nhom.forEach((g, i) => {
+    if (g === 0) return;
+    const bac = total - i - 1;
+    let chu = docNhom3VN(g);
+    if (bac > 0 && bac <= 3) chu += " " + DON_VI_NHOM_VN[bac];
+    parts.push(chu);
+  });
+  let result = parts.join(" ").replace(/\s+/g, " ").trim();
+  result = result.charAt(0).toUpperCase() + result.slice(1);
+  return (amDau ? "Âm " : "") + result + " đồng";
+}
+
+// Ô nhập số tiền: tự hiện dấu phẩy ngăn cách hàng nghìn khi gõ, có dòng chữ
+// nhỏ đọc số tiền bằng chữ bên dưới để nhân viên dễ kiểm tra.
+function MoneyField({ label, value, onChange, placeholder = "0" }) {
+  const numericValue = value === "" || value === null || value === undefined ? "" : Number(value);
+  const displayValue = numericValue === "" || Number.isNaN(numericValue) ? "" : numericValue.toLocaleString("vi-VN");
+  const words = numericValue !== "" && numericValue > 0 ? soTienThanhChu(numericValue) : "";
+
+  const handleChange = (e) => {
+    const digitsOnly = e.target.value.replace(/[^\d]/g, "");
+    onChange(digitsOnly);
+  };
+
+  return (
+    <label className="block">
+      <span className="block text-xs font-medium text-slate-600 mb-1">{label}</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={displayValue}
+        onChange={handleChange}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+      />
+      {words && <span className="block text-[11px] text-slate-400 mt-1 italic">{words}</span>}
+    </label>
+  );
+}
+
+
 function SelectField({ label, children, ...props }) {
   return (
     <label className="block">
@@ -2034,8 +2118,8 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
         <div className="mt-3 pt-3 border-t border-slate-100">
           <p className="text-xs font-medium text-slate-600 mb-2">Thông tin đơn hàng & hóa đơn (riêng khối HTC — điền trước khi chuyển kế toán)</p>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
-            <TextField label="Số tiền đơn hàng (đ)" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
-            <TextField label="Chiết khấu (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" />
+            <MoneyField label="Số tiền đơn hàng (đ)" value={amount} onChange={setAmount} />
+            <MoneyField label="Chiết khấu (đ)" value={discount} onChange={setDiscount} />
             <TextField label="Tên khách hàng xuất hóa đơn" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn" />
             <TextField label="Số hóa đơn" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="VD: HD-000123" />
           </div>
@@ -2478,9 +2562,9 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
       </div>
       <InvoiceInfoStrip order={order} />
       <div className="grid sm:grid-cols-3 gap-3">
-        <TextField label="Số tiền đơn hàng (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
-        <TextField label="Chiết khấu (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
-        <TextField label="Hoa hồng đại sứ (đ)" type="number" min="0" value={commission} onChange={(e) => setCommission(e.target.value)} />
+        <MoneyField label="Số tiền đơn hàng (đ)" value={amount} onChange={setAmount} />
+        <MoneyField label="Chiết khấu (đ)" value={discount} onChange={setDiscount} />
+        <MoneyField label="Hoa hồng đại sứ (đ)" value={commission} onChange={setCommission} />
         {needsQuantity && (
           <TextField label={CATEGORY_LABELS[category]} type="number" min="0" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         )}
@@ -2799,8 +2883,8 @@ function FlatRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercen
         <p className="text-xs text-sky-700 mb-2">Doanh thu & chiết khấu đã tự điền theo thông tin CSKH gửi lên — kiểm tra lại và chỉnh sửa nếu cần.</p>
       )}
       <div className="grid sm:grid-cols-3 gap-3">
-        <TextField label="Doanh thu (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
-        <TextField label="Chiết khấu (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+        <MoneyField label="Doanh thu (đ)" value={amount} onChange={setAmount} />
+        <MoneyField label="Chiết khấu (đ)" value={discount} onChange={setDiscount} />
         <div className="bg-amber-50 rounded-xl px-3 py-2 flex flex-col justify-center">
           <p className="text-xs text-amber-700">Hoa hồng ({ratePercent}% sau chiết khấu)</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
