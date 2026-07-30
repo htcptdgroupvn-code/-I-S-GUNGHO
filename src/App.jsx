@@ -5,7 +5,7 @@ import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   Send, UserPlus, ShoppingBag, TrendingUp, Award, Store, Wallet,
   ArrowRightLeft, RefreshCw, Phone, MapPin, Plus, ChevronRight, Inbox,
-  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search
+  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search, Megaphone, Pin, Pencil, Trash2
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -695,22 +695,34 @@ function orderToRow(o) {
   };
 }
 
+function mapAnnouncement(a) {
+  return {
+    id: a.id, title: a.title, content: a.content,
+    targetRoles: a.target_roles || ["all"], isPinned: !!a.is_pinned,
+    createdBy: a.created_by, createdByName: a.created_by_name,
+    createdAt: a.created_at, updatedAt: a.updated_at,
+  };
+}
+
 async function fetchAll() {
-  const [emp, cust, ord, notif] = await Promise.all([
+  const [emp, cust, ord, notif, announ] = await Promise.all([
     supabase.from("employees").select("*"),
     supabase.from("customers").select("*").order("created_at", { ascending: false }),
     supabase.from("orders").select("*").order("created_at", { ascending: false }),
     supabase.from("notifications").select("*").order("created_at", { ascending: false }),
+    supabase.from("announcements").select("*").order("created_at", { ascending: false }),
   ]);
   if (emp.error) console.error("fetch employees error", emp.error);
   if (cust.error) console.error("fetch customers error", cust.error);
   if (ord.error) console.error("fetch orders error", ord.error);
   if (notif.error) console.error("fetch notifications error", notif.error);
+  if (announ.error) console.error("fetch announcements error", announ.error);
   return {
     employees: (emp.data || []).map(mapEmployee),
     customers: (cust.data || []).map(mapCustomer),
     orders: (ord.data || []).map(mapOrder),
     notifications: (notif.data || []).map(mapNotification),
+    announcements: (announ.data || []).map(mapAnnouncement),
   };
 }
 
@@ -1075,6 +1087,7 @@ export default function App() {
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [tab, setTab] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
@@ -1094,6 +1107,7 @@ export default function App() {
     setCustomers(finalData.customers);
     setOrders(finalData.orders);
     setNotifications(finalData.notifications);
+    setAnnouncements(finalData.announcements);
     forceRerender((n) => n + 1);
     if (closedCount > 0) {
       showToast(`Đã tự động đóng ${closedCount} đơn hàng HTC quá 30 ngày chưa thanh toán`);
@@ -1175,6 +1189,49 @@ export default function App() {
     setCustomers((prev) => [c, ...prev]);
     showToast("Đã thêm khách hàng mới");
     return c;
+  };
+
+  const addAnnouncement = async ({ title, content, targetRoles, isPinned }) => {
+    const { data, error } = await supabase
+      .from("announcements")
+      .insert({
+        title, content, target_roles: targetRoles?.length ? targetRoles : ["all"], is_pinned: !!isPinned,
+        created_by: currentUser.id, created_by_name: currentUser.name,
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error("addAnnouncement error", error);
+      showToast("Không đăng được thông báo, vui lòng thử lại");
+      throw error;
+    }
+    setAnnouncements((prev) => [mapAnnouncement(data), ...prev]);
+    showToast("Đã đăng thông báo mới");
+  };
+
+  const updateAnnouncement = async (id, { title, content, targetRoles, isPinned }) => {
+    const { error } = await supabase
+      .from("announcements")
+      .update({ title, content, target_roles: targetRoles?.length ? targetRoles : ["all"], is_pinned: !!isPinned, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      console.error("updateAnnouncement error", error);
+      showToast("Không cập nhật được thông báo, vui lòng thử lại");
+      throw error;
+    }
+    await refreshAll();
+    showToast("Đã cập nhật thông báo");
+  };
+
+  const deleteAnnouncement = async (id) => {
+    const { error } = await supabase.from("announcements").delete().eq("id", id);
+    if (error) {
+      console.error("deleteAnnouncement error", error);
+      showToast("Không xoá được thông báo, vui lòng thử lại");
+      throw error;
+    }
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    showToast("Đã xoá thông báo");
   };
 
   const createOrder = async ({ customerId, company, store, storeAddress, product, handlerId }) => {
@@ -1386,12 +1443,15 @@ export default function App() {
     { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
     { key: "lich_su", label: "Lịch sử", icon: Wallet },
   ];
+  const GROUP_THONG_BAO = [
+    { key: "thong_bao", label: "Thông báo", icon: Megaphone },
+  ];
   const NAV_GROUPS = {
-    dai_su: [GROUP_BAN_HANG],
-    xu_ly: [GROUP_BAN_HANG, GROUP_CSKH],
-    cht: [GROUP_BAN_HANG, GROUP_QUAN_LY],
-    ke_toan: [GROUP_BAN_HANG, GROUP_KE_TOAN],
-    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN],
+    dai_su: [GROUP_BAN_HANG, GROUP_THONG_BAO],
+    xu_ly: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
+    cht: [GROUP_BAN_HANG, GROUP_QUAN_LY, GROUP_THONG_BAO],
+    ke_toan: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
+    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN, GROUP_THONG_BAO],
   };
   const navGroups = NAV_GROUPS[currentUser.role];
 
@@ -1479,6 +1539,16 @@ export default function App() {
           <KeToanChoXacNhan currentUser={currentUser} orders={orders} onConfirm={confirmPayment} onReject={rejectPayment} />
         )}
         {tab === "lich_su" && <KeToanLichSu currentUser={currentUser} orders={orders} />}
+
+        {tab === "thong_bao" && (
+          <AnnouncementsPage
+            currentUser={currentUser}
+            announcements={announcements}
+            onAdd={addAnnouncement}
+            onUpdate={updateAnnouncement}
+            onDelete={deleteAnnouncement}
+          />
+        )}
       </div>
       <Toast toast={toast} />
     </div>
@@ -1640,6 +1710,196 @@ function AdminCustomerGroups({ customers, orderCountByCustomer }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THÔNG BÁO / HƯỚNG DẪN SỬ DỤNG — chung cho mọi vai trò
+// ---------------------------------------------------------------------------
+
+const ANNOUNCEMENT_ROLE_OPTIONS = [
+  { key: "dai_su", label: "Đại sứ Gungho" },
+  { key: "xu_ly", label: "Xử lý - CSKH" },
+  { key: "cht", label: "Trưởng đơn vị" },
+  { key: "ke_toan", label: "Kế toán" },
+];
+
+function AnnouncementForm({ initial, onSubmit, onCancel, saving }) {
+  const [title, setTitle] = useState(initial?.title || "");
+  const [content, setContent] = useState(initial?.content || "");
+  const [isPinned, setIsPinned] = useState(initial?.isPinned || false);
+  const [roles, setRoles] = useState(initial?.targetRoles?.includes("all") ? [] : (initial?.targetRoles || []));
+  const [allRoles, setAllRoles] = useState(!initial || initial.targetRoles?.includes("all"));
+  const [error, setError] = useState("");
+
+  const toggleRole = (key) => {
+    setRoles((prev) => (prev.includes(key) ? prev.filter((r) => r !== key) : [...prev, key]));
+  };
+
+  const submit = () => {
+    if (!title.trim() || !content.trim()) {
+      setError("Vui lòng nhập đủ tiêu đề và nội dung thông báo.");
+      return;
+    }
+    if (!allRoles && roles.length === 0) {
+      setError("Vui lòng chọn ít nhất 1 vai trò áp dụng, hoặc chọn “Tất cả vai trò”.");
+      return;
+    }
+    setError("");
+    onSubmit({ title: title.trim(), content: content.trim(), targetRoles: allRoles ? ["all"] : roles, isPinned });
+  };
+
+  return (
+    <Card className="p-4 mb-5">
+      <div className="space-y-3">
+        <TextField label="Tiêu đề" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="VD: Cập nhật quy định hoa hồng khối HTC" />
+        <label className="block">
+          <span className="block text-xs font-medium text-slate-600 mb-1">Nội dung</span>
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={5}
+            placeholder="Nội dung hướng dẫn / thông báo chi tiết..."
+            className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+          />
+        </label>
+        <div>
+          <span className="block text-xs font-medium text-slate-600 mb-2">Áp dụng cho</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAllRoles(true)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${allRoles ? "bg-teal-800 text-white border-teal-800" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"}`}
+            >
+              Tất cả vai trò
+            </button>
+            {ANNOUNCEMENT_ROLE_OPTIONS.map((r) => (
+              <button
+                key={r.key}
+                type="button"
+                onClick={() => { setAllRoles(false); toggleRole(r.key); }}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${!allRoles && roles.includes(r.key) ? "bg-teal-800 text-white border-teal-800" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"}`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={isPinned} onChange={(e) => setIsPinned(e.target.checked)} className="rounded border-slate-300" />
+          Ghim lên đầu danh sách
+        </label>
+        {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
+        <div className="flex gap-2">
+          <PrimaryButton type="button" onClick={submit} disabled={saving}>
+            {saving ? "Đang lưu..." : initial ? "Lưu thay đổi" : "Đăng thông báo"}
+          </PrimaryButton>
+          <GhostButton type="button" onClick={onCancel}>Hủy</GhostButton>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function AnnouncementCard({ a, isAdmin, onEdit, onDelete }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const roleLabels = a.targetRoles.includes("all")
+    ? "Tất cả vai trò"
+    : a.targetRoles.map((r) => ANNOUNCEMENT_ROLE_OPTIONS.find((o) => o.key === r)?.label || r).join(", ");
+
+  return (
+    <Card className={`p-4 ${a.isPinned ? "border-amber-300 bg-amber-50/30" : ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {a.isPinned && <Pin size={14} className="text-amber-600 shrink-0" />}
+          <p className="font-semibold text-slate-800">{a.title}</p>
+        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-1 shrink-0">
+            <button onClick={() => onEdit(a)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-teal-700 transition" title="Sửa">
+              <Pencil size={14} />
+            </button>
+            {confirmingDelete ? (
+              <div className="flex items-center gap-1">
+                <button onClick={() => onDelete(a.id)} className="text-xs text-rose-600 font-medium px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100">Xoá?</button>
+                <button onClick={() => setConfirmingDelete(false)} className="text-xs text-slate-500 px-2 py-1">Hủy</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmingDelete(true)} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition" title="Xoá">
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <p className="text-sm text-slate-600 mt-2 whitespace-pre-wrap">{a.content}</p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-400">
+        <span>{a.createdByName || "Ban quản lý Gungho"}</span>
+        <span>·</span>
+        <span>{fmtDate(a.createdAt)}</span>
+        <span>·</span>
+        <Badge className="bg-slate-100 text-slate-500 border-slate-200 !text-[10px] !py-0.5">{roleLabels}</Badge>
+      </div>
+    </Card>
+  );
+}
+
+function AnnouncementsPage({ currentUser, announcements, onAdd, onUpdate, onDelete }) {
+  const isAdmin = currentUser.role === "admin";
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const visible = announcements
+    .filter((a) => a.targetRoles.includes("all") || a.targetRoles.includes(currentUser.role))
+    .sort((a, b) => (b.isPinned - a.isPinned) || (new Date(b.createdAt) - new Date(a.createdAt)));
+
+  const handleAdd = async (payload) => {
+    setSaving(true);
+    try {
+      await onAdd(payload);
+      setShowForm(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdate = async (payload) => {
+    setSaving(true);
+    try {
+      await onUpdate(editing.id, payload);
+      setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <SectionTitle icon={Megaphone} title="Thông báo & Hướng dẫn sử dụng" subtitle={isAdmin ? "Đăng thông báo, hướng dẫn cho từng vai trò trong hệ thống" : "Các thông báo và hướng dẫn từ Ban quản lý Gungho"} />
+        {isAdmin && !showForm && !editing && (
+          <PrimaryButton onClick={() => setShowForm(true)}><Plus size={15} /> Đăng thông báo mới</PrimaryButton>
+        )}
+      </div>
+
+      {isAdmin && showForm && (
+        <AnnouncementForm onSubmit={handleAdd} onCancel={() => setShowForm(false)} saving={saving} />
+      )}
+      {isAdmin && editing && (
+        <AnnouncementForm initial={editing} onSubmit={handleUpdate} onCancel={() => setEditing(null)} saving={saving} />
+      )}
+
+      {visible.length === 0 ? (
+        <EmptyState icon={Megaphone} text="Chưa có thông báo nào." />
+      ) : (
+        <div className="space-y-3">
+          {visible.map((a) => (
+            <AnnouncementCard key={a.id} a={a} isAdmin={isAdmin} onEdit={(item) => { setEditing(item); setShowForm(false); }} onDelete={onDelete} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
