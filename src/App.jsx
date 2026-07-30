@@ -5,7 +5,7 @@ import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   Send, UserPlus, ShoppingBag, TrendingUp, Award, Store, Wallet,
   ArrowRightLeft, RefreshCw, Phone, MapPin, Plus, ChevronRight, Inbox,
-  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download
+  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -617,6 +617,12 @@ const STATUS_META = {
   khong_thanh_toan: { label: "Không thanh toán", color: "bg-rose-50 text-rose-700 border-rose-300" },
 };
 
+// Quy định riêng khối HTC: đơn hàng chờ thanh toán quá số ngày này sẽ tự động
+// đóng khi tài khoản kế toán/admin mở app — ghi nhận doanh thu & doanh số
+// Gungho cho Đại sứ, nhưng KHÔNG ghi nhận hoa hồng Gungho.
+const HTC_COMPANY_NAME = "III. HTC";
+const HTC_AUTO_CLOSE_DAYS = 30;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -665,6 +671,7 @@ function mapOrder(o) {
     discountAmount: Number(o.discount_amount) || 0,
     finalAmount: o.final_amount === null || o.final_amount === undefined ? undefined : Number(o.final_amount),
     commissionAmount: Number(o.commission_amount) || 0,
+    invoiceName: o.invoice_name || "", invoiceNumber: o.invoice_number || "",
     createdBy: o.created_by, createdByName: o.created_by_name,
     assignedHandler: o.assigned_handler, assignedHandlerName: o.assigned_handler_name,
     status: o.status, handlerNote: o.handler_note, accountantNote: o.accountant_note,
@@ -996,13 +1003,18 @@ export default function App() {
 
   const refreshAll = useCallback(async () => {
     const data = await fetchAll();
+    const closedCount = await autoCloseOverdueHTCOrders(data.orders);
+    const finalData = closedCount > 0 ? await fetchAll() : data;
     USERS.length = 0;
-    USERS.push(...data.employees);
-    setCustomers(data.customers);
-    setOrders(data.orders);
-    setNotifications(data.notifications);
+    USERS.push(...finalData.employees);
+    setCustomers(finalData.customers);
+    setOrders(finalData.orders);
+    setNotifications(finalData.notifications);
     forceRerender((n) => n + 1);
-    return data;
+    if (closedCount > 0) {
+      showToast(`Đã tự động đóng ${closedCount} đơn hàng HTC quá 30 ngày chưa thanh toán`);
+    }
+    return finalData;
   }, []);
 
   useEffect(() => {
@@ -1154,10 +1166,20 @@ export default function App() {
     showToast("Đã xác nhận chăm sóc");
   };
 
-  const forwardToAccounting = async (orderId, note) => {
+  const forwardToAccounting = async (orderId, note, htcInfo) => {
     const order = orders.find((o) => o.id === orderId);
-    const newHistory = [...order.history, `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua)`];
-    await updateOrder(orderId, { status: "cho_ke_toan", handler_note: note, history: newHistory, updated_at: new Date().toISOString() });
+    const historyLine = htcInfo
+      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua). Số tiền: ${fmtMoney(htcInfo.amount)} · Chiết khấu: ${fmtMoney(htcInfo.discountAmount)} · Tên xuất HĐ: ${htcInfo.invoiceName} · Số HĐ: ${htcInfo.invoiceNumber}`
+      : `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua)`;
+    const newHistory = [...order.history, historyLine];
+    const patch = { status: "cho_ke_toan", handler_note: note, history: newHistory, updated_at: new Date().toISOString() };
+    if (htcInfo) {
+      patch.total_amount = htcInfo.amount;
+      patch.discount_amount = htcInfo.discountAmount;
+      patch.invoice_name = htcInfo.invoiceName;
+      patch.invoice_number = htcInfo.invoiceNumber;
+    }
+    await updateOrder(orderId, patch);
     const storeAccountants = USERS.filter((u) => u.role === "ke_toan" && u.store === order.store);
     const targets = storeAccountants.length > 0 ? storeAccountants : USERS.filter((u) => u.role === "ke_toan");
     await insertNotifications([
@@ -1208,6 +1230,44 @@ export default function App() {
     ]);
     await refreshAll();
     showToast("Đã cập nhật: không thanh toán");
+  };
+
+  // Quét đơn hàng khối HTC đang "Chờ thanh toán" (cho_ke_toan) quá
+  // HTC_AUTO_CLOSE_DAYS ngày kể từ lần cập nhật gần nhất → tự động đóng:
+  // ghi nhận doanh thu/doanh số Gungho cho Đại sứ nhưng KHÔNG tính hoa hồng.
+  const autoCloseOverdueHTCOrders = async (orderList) => {
+    const now = Date.now();
+    const eligible = orderList.filter((o) => {
+      if (o.status !== "cho_ke_toan") return false;
+      if (o.company !== HTC_COMPANY_NAME) return false;
+      if (!o.updatedAt) return false;
+      const daysElapsed = (now - new Date(o.updatedAt).getTime()) / 86400000;
+      return daysElapsed > HTC_AUTO_CLOSE_DAYS;
+    });
+    for (const o of eligible) {
+      const newHistory = [
+        ...(o.history || []),
+        `${fmtDate(new Date().toISOString())} — Hệ thống tự động đóng đơn: quá ${HTC_AUTO_CLOSE_DAYS} ngày chưa thanh toán (khối HTC). Ghi nhận doanh thu & doanh số Gungho, KHÔNG tính hoa hồng.`,
+      ];
+      try {
+        await updateOrder(o.id, {
+          status: "da_thanh_toan",
+          total_amount: o.totalAmount,
+          discount_amount: 0,
+          final_amount: o.totalAmount,
+          commission_amount: 0,
+          accountant_note: [o.accountantNote, `Tự động đóng: quá ${HTC_AUTO_CLOSE_DAYS} ngày chưa thanh toán (HTC) — không tính hoa hồng.`].filter(Boolean).join(" | "),
+          history: newHistory,
+          updated_at: new Date().toISOString(),
+        });
+        await insertNotifications([
+          notifRow(o.createdBy, `Đơn hàng của khách "${o.customerName}" đã tự động đóng do quá ${HTC_AUTO_CLOSE_DAYS} ngày chưa thanh toán (khối HTC). Đã ghi nhận doanh thu & doanh số, không có hoa hồng.`, o.id),
+        ]);
+      } catch (e) {
+        console.error("auto-close HTC order failed", o.id, e);
+      }
+    }
+    return eligible.length;
   };
 
   // ---- render -----------------------------------------------------------
@@ -1933,6 +1993,29 @@ function DaiSuBaoCao({ currentUser, orders }) {
 
 function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
   const [note, setNote] = useState(order.handlerNote || "");
+  const isHTCOrder = order.company === HTC_COMPANY_NAME;
+  const [amount, setAmount] = useState(order.totalAmount || "");
+  const [discount, setDiscount] = useState(order.discountAmount || 0);
+  const [invoiceName, setInvoiceName] = useState(order.invoiceName || "");
+  const [invoiceNumber, setInvoiceNumber] = useState(order.invoiceNumber || "");
+  const [invoiceError, setInvoiceError] = useState("");
+
+  const handleForward = () => {
+    if (isHTCOrder) {
+      if (!amount || Number(amount) <= 0 || !invoiceName.trim() || !invoiceNumber.trim()) {
+        setInvoiceError("Vui lòng điền đủ Số tiền đơn hàng, Tên khách hàng xuất hóa đơn và Số hóa đơn trước khi chuyển kế toán.");
+        return;
+      }
+      setInvoiceError("");
+      onForward(order.id, note, {
+        amount: Number(amount) || 0, discountAmount: Number(discount) || 0,
+        invoiceName: invoiceName.trim(), invoiceNumber: invoiceNumber.trim(),
+      });
+    } else {
+      onForward(order.id, note);
+    }
+  };
+
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
@@ -1947,13 +2030,25 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
         </div>
       </div>
       <TextAreaField label="Ghi chú chăm sóc (gửi về Đại sứ Gungho)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ví dụ: đã liên hệ, khách đang cân nhắc..." />
+      {order.status === "dang_cham_soc" && isHTCOrder && (
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <p className="text-xs font-medium text-slate-600 mb-2">Thông tin đơn hàng & hóa đơn (riêng khối HTC — điền trước khi chuyển kế toán)</p>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <TextField label="Số tiền đơn hàng (đ)" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+            <TextField label="Chiết khấu (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" />
+            <TextField label="Tên khách hàng xuất hóa đơn" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn" />
+            <TextField label="Số hóa đơn" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="VD: HD-000123" />
+          </div>
+          {invoiceError && <p className="text-xs text-rose-600 mt-1">{invoiceError}</p>}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2 mt-3">
         {order.status === "cho_xu_ly" && (
           <PrimaryButton onClick={() => onConfirm(order.id, note)}><CheckCircle2 size={15} /> Xác nhận chăm sóc</PrimaryButton>
         )}
         {order.status === "dang_cham_soc" && (
           <>
-            <PrimaryButton onClick={() => onForward(order.id, note)}><Send size={15} /> Khách đồng ý mua — Chuyển kế toán</PrimaryButton>
+            <PrimaryButton onClick={handleForward}><Send size={15} /> Khách đồng ý mua — Chuyển kế toán</PrimaryButton>
             <DangerButton onClick={() => onDecline(order.id, note)}><XCircle size={15} /> Khách không mua</DangerButton>
           </>
         )}
@@ -1961,6 +2056,7 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
     </Card>
   );
 }
+
 
 function XuLyDuocGiao({ currentUser, orders, onConfirm, onForward, onDecline }) {
   const isAdmin = currentUser.role === "admin";
@@ -2334,7 +2430,21 @@ function AccountingCard({ order, onConfirm, onReject }) {
   return <GenericAccountingCard order={order} onConfirm={onConfirm} onReject={onReject} />;
 }
 
+function InvoiceInfoStrip({ order }) {
+  if (order.company !== HTC_COMPANY_NAME || (!order.invoiceName && !order.invoiceNumber)) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 bg-sky-50 border border-sky-200 rounded-xl px-3 py-2 mb-3 text-xs text-sky-800">
+      <span className="font-medium flex items-center gap-1"><FileText size={12} /> CSKH đã gửi (HTC)</span>
+      <span>Tên xuất HĐ: <span className="font-medium">{order.invoiceName || "—"}</span></span>
+      <span>Số HĐ: <span className="font-medium">{order.invoiceNumber || "—"}</span></span>
+      <span>Số tiền: <span className="font-medium">{fmtMoney(order.totalAmount)}</span></span>
+      <span>Chiết khấu: <span className="font-medium">{fmtMoney(order.discountAmount)}</span></span>
+    </div>
+  );
+}
+
 // ---- Sản phẩm thông thường (giữ nguyên form cũ) ----
+
 function GenericAccountingCard({ order, onConfirm, onReject }) {
   const [amount, setAmount] = useState("");
   const [discount, setDiscount] = useState(0);
@@ -2366,6 +2476,7 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
         </div>
       </div>
+      <InvoiceInfoStrip order={order} />
       <div className="grid sm:grid-cols-3 gap-3">
         <TextField label="Số tiền đơn hàng (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
         <TextField label="Chiết khấu (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
@@ -2667,24 +2778,31 @@ function BaoHiemOTOForm({ order, onConfirm, onReject, note, setNote }) {
 
 // ---- Doanh thu × % cố định, không phân biệt giảm giá — dùng cho Đặc sản địa phương / Phòng nghỉ / Tiệc ----
 function FlatRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercent }) {
-  const [amount, setAmount] = useState("");
+  const isHTCOrder = order.company === HTC_COMPANY_NAME;
+  const [amount, setAmount] = useState(isHTCOrder && order.totalAmount ? String(order.totalAmount) : "");
+  const [discount, setDiscount] = useState(isHTCOrder ? (order.discountAmount || 0) : 0);
   const [error, setError] = useState("");
 
   const revenue = Number(amount) || 0;
-  const totalCommission = Math.round(revenue * (ratePercent / 100));
+  const finalAmount = Math.max(revenue - (Number(discount) || 0), 0);
+  const totalCommission = Math.round(finalAmount * (ratePercent / 100));
 
   const handleConfirm = () => {
     if (revenue <= 0) { setError("Vui lòng nhập doanh thu hợp lệ."); return; }
     setError("");
-    onConfirm(order.id, { amount: revenue, discountAmount: 0, commissionAmount: totalCommission, quantity: 1, note });
+    onConfirm(order.id, { amount: revenue, discountAmount: Number(discount) || 0, commissionAmount: totalCommission, quantity: 1, note });
   };
 
   return (
     <>
-      <div className="grid sm:grid-cols-2 gap-3">
+      {isHTCOrder && order.totalAmount > 0 && (
+        <p className="text-xs text-sky-700 mb-2">Doanh thu & chiết khấu đã tự điền theo thông tin CSKH gửi lên — kiểm tra lại và chỉnh sửa nếu cần.</p>
+      )}
+      <div className="grid sm:grid-cols-3 gap-3">
         <TextField label="Doanh thu (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+        <TextField label="Chiết khấu (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
         <div className="bg-amber-50 rounded-xl px-3 py-2 flex flex-col justify-center">
-          <p className="text-xs text-amber-700">Hoa hồng ({ratePercent}% doanh thu)</p>
+          <p className="text-xs text-amber-700">Hoa hồng ({ratePercent}% sau chiết khấu)</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
       </div>
@@ -2814,6 +2932,20 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
         </div>
         <Badge className="bg-teal-50 text-teal-700 border-teal-200">Quy định thưởng Khối {groupLabel}</Badge>
       </div>
+      <InvoiceInfoStrip order={order} />
+      {isHTC && order.company === HTC_COMPANY_NAME && order.updatedAt && (() => {
+        const daysElapsed = (Date.now() - new Date(order.updatedAt).getTime()) / 86400000;
+        const daysLeft = Math.ceil(HTC_AUTO_CLOSE_DAYS - daysElapsed);
+        const overdue = daysLeft <= 0;
+        return (
+          <p className={`text-xs mb-3 -mt-2 flex items-center gap-1 ${overdue ? "text-rose-600 font-medium" : daysLeft <= 5 ? "text-amber-600" : "text-slate-400"}`}>
+            <Clock size={12} />
+            {overdue
+              ? `Đã quá ${HTC_AUTO_CLOSE_DAYS} ngày chưa thanh toán — sẽ tự động đóng (ghi nhận doanh thu, không hoa hồng) ở lần tải lại tiếp theo.`
+              : `Còn ${daysLeft} ngày trước khi tự động đóng nếu chưa xác nhận thanh toán (quy định riêng khối HTC).`}
+          </p>
+        );
+      })()}
       {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
       {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
       {order.product === P.PHU_TUNG && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
