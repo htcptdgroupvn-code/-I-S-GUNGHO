@@ -5,7 +5,7 @@ import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   Send, UserPlus, ShoppingBag, TrendingUp, Award, Store, Wallet,
   ArrowRightLeft, RefreshCw, Phone, MapPin, Plus, ChevronRight, Inbox,
-  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText
+  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -1457,7 +1457,7 @@ export default function App() {
 
       <div className="max-w-6xl mx-auto px-4 py-6">
         {tab === "khach_hang" && (
-          <DaiSuKhachHang currentUser={currentUser} customers={customers} onAdd={addCustomer} />
+          <DaiSuKhachHang currentUser={currentUser} customers={customers} orders={orders} onAdd={addCustomer} />
         )}
         {tab === "don_hang_ds" && (
           <DaiSuDonHang currentUser={currentUser} customers={customers} orders={orders} onCreate={createOrder} />
@@ -1489,11 +1489,50 @@ export default function App() {
 // ĐẠI SỨ — Khách hàng
 // ---------------------------------------------------------------------------
 
-function DaiSuKhachHang({ currentUser, customers, onAdd }) {
+function CustomerMiniCard({ c, orderCount }) {
+  const initial = (c.name || "?").trim()[0]?.toUpperCase() || "?";
+  return (
+    <Card className="p-4 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+          {initial}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-medium text-slate-800 truncate">{c.name}</p>
+            {c.customerCode && <Badge className="bg-teal-50 text-teal-700 border-teal-200 shrink-0">{c.customerCode}</Badge>}
+          </div>
+          <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Phone size={13} className="shrink-0" /> {c.phone}</p>
+          {c.address && <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><MapPin size={13} className="shrink-0" /> <span className="truncate">{c.address}</span></p>}
+        </div>
+      </div>
+      <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
+        <span className="text-[11px] text-slate-400">Thêm lúc {fmtDate(c.createdAt)}</span>
+        <Badge className={orderCount > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-slate-50 text-slate-400 border-slate-200"}>
+          <ShoppingBag size={11} /> {orderCount} đơn
+        </Badge>
+      </div>
+    </Card>
+  );
+}
+
+function DaiSuKhachHang({ currentUser, customers, orders, onAdd }) {
   const [form, setForm] = useState({ name: "", phone: "", address: "" });
   const [showForm, setShowForm] = useState(false);
+  const [query, setQuery] = useState("");
   const isAdmin = currentUser.role === "admin";
   const mine = isAdmin ? customers : customers.filter((c) => c.createdBy === currentUser.id);
+
+  const orderCountByCustomer = useMemo(() => {
+    const map = new Map();
+    (orders || []).forEach((o) => map.set(o.customerId, (map.get(o.customerId) || 0) + 1));
+    return map;
+  }, [orders]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? mine.filter((c) => c.name?.toLowerCase().includes(q) || c.phone?.includes(q) || c.customerCode?.toLowerCase().includes(q))
+    : mine;
 
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1518,7 +1557,7 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <SectionTitle icon={Users} title="Danh sách khách hàng" subtitle={isAdmin ? `Toàn bộ ${mine.length} khách hàng, nhóm theo Đại sứ Gungho` : `Bạn đang theo dõi ${mine.length} khách hàng`} />
         <PrimaryButton onClick={() => setShowForm((s) => !s)}>
           <UserPlus size={15} /> Thêm khách hàng
@@ -1544,22 +1583,29 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
         </Card>
       )}
 
+      {mine.length > 0 && (
+        <Card className="p-3 mb-4 flex items-center gap-2">
+          <Search size={15} className="text-slate-400 shrink-0" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Tìm theo tên, số điện thoại hoặc mã khách hàng..."
+            className="flex-1 text-sm outline-none placeholder:text-slate-400"
+          />
+          {query && <button onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600"><X size={15} /></button>}
+        </Card>
+      )}
+
       {mine.length === 0 ? (
         <EmptyState icon={Users} text="Chưa có khách hàng nào — bấm “Thêm khách hàng” để bắt đầu." />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Search} text="Không tìm thấy khách hàng phù hợp." />
       ) : isAdmin ? (
-        <AdminCustomerGroups customers={mine} />
+        <AdminCustomerGroups customers={filtered} orderCountByCustomer={orderCountByCustomer} />
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {mine.map((c) => (
-            <Card key={c.id} className="p-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-medium text-slate-800">{c.name}</p>
-                {c.customerCode && <Badge className="bg-teal-50 text-teal-700 border-teal-200">{c.customerCode}</Badge>}
-              </div>
-              <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Phone size={13} /> {c.phone}</p>
-              {c.address && <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><MapPin size={13} /> {c.address}</p>}
-              <p className="text-[11px] text-slate-400 mt-2">Thêm lúc {fmtDate(c.createdAt)}</p>
-            </Card>
+          {filtered.map((c) => (
+            <CustomerMiniCard key={c.id} c={c} orderCount={orderCountByCustomer.get(c.id) || 0} />
           ))}
         </div>
       )}
@@ -1567,7 +1613,7 @@ function DaiSuKhachHang({ currentUser, customers, onAdd }) {
   );
 }
 
-function AdminCustomerGroups({ customers }) {
+function AdminCustomerGroups({ customers, orderCountByCustomer }) {
   const groups = new Map();
   customers.forEach((c) => {
     const key = c.createdByName || "Không rõ người tạo";
@@ -1589,15 +1635,7 @@ function AdminCustomerGroups({ customers }) {
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {list.map((c) => (
-              <Card key={c.id} className="p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-medium text-slate-800">{c.name}</p>
-                  {c.customerCode && <Badge className="bg-teal-50 text-teal-700 border-teal-200">{c.customerCode}</Badge>}
-                </div>
-                <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><Phone size={13} /> {c.phone}</p>
-                {c.address && <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-1"><MapPin size={13} /> {c.address}</p>}
-                <p className="text-[11px] text-slate-400 mt-2">Thêm lúc {fmtDate(c.createdAt)}</p>
-              </Card>
+              <CustomerMiniCard key={c.id} c={c} orderCount={orderCountByCustomer?.get(c.id) || 0} />
             ))}
           </div>
         </div>
