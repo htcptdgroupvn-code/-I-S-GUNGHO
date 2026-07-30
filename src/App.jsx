@@ -698,7 +698,7 @@ function orderToRow(o) {
 function mapAnnouncement(a) {
   return {
     id: a.id, title: a.title, content: a.content,
-    targetRoles: a.target_roles || ["all"], isPinned: !!a.is_pinned,
+    targetRoles: a.target_roles || ["all"], isPinned: !!a.is_pinned, isUrgent: !!a.is_urgent,
     createdBy: a.created_by, createdByName: a.created_by_name,
     createdAt: a.created_at, updatedAt: a.updated_at,
   };
@@ -1191,11 +1191,11 @@ export default function App() {
     return c;
   };
 
-  const addAnnouncement = async ({ title, content, targetRoles, isPinned }) => {
+  const addAnnouncement = async ({ title, content, targetRoles, isPinned, isUrgent }) => {
     const { data, error } = await supabase
       .from("announcements")
       .insert({
-        title, content, target_roles: targetRoles?.length ? targetRoles : ["all"], is_pinned: !!isPinned,
+        title, content, target_roles: targetRoles?.length ? targetRoles : ["all"], is_pinned: !!isPinned, is_urgent: !!isUrgent,
         created_by: currentUser.id, created_by_name: currentUser.name,
       })
       .select()
@@ -1209,10 +1209,10 @@ export default function App() {
     showToast("Đã đăng thông báo mới");
   };
 
-  const updateAnnouncement = async (id, { title, content, targetRoles, isPinned }) => {
+  const updateAnnouncement = async (id, { title, content, targetRoles, isPinned, isUrgent }) => {
     const { error } = await supabase
       .from("announcements")
-      .update({ title, content, target_roles: targetRoles?.length ? targetRoles : ["all"], is_pinned: !!isPinned, updated_at: new Date().toISOString() })
+      .update({ title, content, target_roles: targetRoles?.length ? targetRoles : ["all"], is_pinned: !!isPinned, is_urgent: !!isUrgent, updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) {
       console.error("updateAnnouncement error", error);
@@ -1458,6 +1458,7 @@ export default function App() {
   return (
     <div className="min-h-[600px] bg-slate-50">
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <UrgentAnnouncementModal currentUser={currentUser} announcements={announcements} />
       {/* top bar */}
       <div className="bg-white/90 backdrop-blur border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
@@ -1729,6 +1730,7 @@ function AnnouncementForm({ initial, onSubmit, onCancel, saving }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [content, setContent] = useState(initial?.content || "");
   const [isPinned, setIsPinned] = useState(initial?.isPinned || false);
+  const [isUrgent, setIsUrgent] = useState(initial?.isUrgent || false);
   const [roles, setRoles] = useState(initial?.targetRoles?.includes("all") ? [] : (initial?.targetRoles || []));
   const [allRoles, setAllRoles] = useState(!initial || initial.targetRoles?.includes("all"));
   const [error, setError] = useState("");
@@ -1747,7 +1749,7 @@ function AnnouncementForm({ initial, onSubmit, onCancel, saving }) {
       return;
     }
     setError("");
-    onSubmit({ title: title.trim(), content: content.trim(), targetRoles: allRoles ? ["all"] : roles, isPinned });
+    onSubmit({ title: title.trim(), content: content.trim(), targetRoles: allRoles ? ["all"] : roles, isPinned, isUrgent });
   };
 
   return (
@@ -1790,6 +1792,10 @@ function AnnouncementForm({ initial, onSubmit, onCancel, saving }) {
           <input type="checkbox" checked={isPinned} onChange={(e) => setIsPinned(e.target.checked)} className="rounded border-slate-300" />
           Ghim lên đầu danh sách
         </label>
+        <label className="flex items-center gap-2 text-sm text-rose-700 font-medium">
+          <input type="checkbox" checked={isUrgent} onChange={(e) => setIsUrgent(e.target.checked)} className="rounded border-rose-300 text-rose-600" />
+          Quan trọng — hiển thị nổi bật (đỏ) và tự bật hộp thoại khi nhân sự đăng nhập
+        </label>
         {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
         <div className="flex gap-2">
           <PrimaryButton type="button" onClick={submit} disabled={saving}>
@@ -1809,11 +1815,16 @@ function AnnouncementCard({ a, isAdmin, onEdit, onDelete }) {
     : a.targetRoles.map((r) => ANNOUNCEMENT_ROLE_OPTIONS.find((o) => o.key === r)?.label || r).join(", ");
 
   return (
-    <Card className={`p-4 ${a.isPinned ? "border-amber-300 bg-amber-50/30" : ""}`}>
+    <Card className={`p-4 ${a.isUrgent ? "border-rose-300 bg-rose-50/40" : a.isPinned ? "border-amber-300 bg-amber-50/30" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
+          {a.isUrgent && (
+            <Badge className="bg-rose-600 text-white border-rose-600 !text-[10px] !py-0.5">
+              <AlertCircle size={11} /> Quan trọng
+            </Badge>
+          )}
           {a.isPinned && <Pin size={14} className="text-amber-600 shrink-0" />}
-          <p className="font-semibold text-slate-800">{a.title}</p>
+          <p className={`font-semibold ${a.isUrgent ? "text-rose-800" : "text-slate-800"}`}>{a.title}</p>
         </div>
         {isAdmin && (
           <div className="flex items-center gap-1 shrink-0">
@@ -1845,14 +1856,64 @@ function AnnouncementCard({ a, isAdmin, onEdit, onDelete }) {
   );
 }
 
+function UrgentAnnouncementModal({ currentUser, announcements }) {
+  const storageKey = `gungho_seen_urgent_${currentUser.id}`;
+  const [seenIds, setSeenIds] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(storageKey) || "[]");
+    } catch {
+      return [];
+    }
+  });
+  const [index, setIndex] = useState(0);
+
+  const unseen = announcements.filter(
+    (a) => a.isUrgent && (a.targetRoles.includes("all") || a.targetRoles.includes(currentUser.role)) && !seenIds.includes(a.id)
+  );
+
+  if (unseen.length === 0) return null;
+  const current = unseen[Math.min(index, unseen.length - 1)];
+
+  const dismiss = () => {
+    const nextSeen = [...new Set([...seenIds, current.id])];
+    setSeenIds(nextSeen);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(nextSeen));
+    } catch {}
+    setIndex(0);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-[fadeIn_.2s_ease-out]">
+        <div className="bg-gradient-to-r from-rose-600 to-rose-700 px-5 py-4 flex items-center gap-2.5">
+          <AlertCircle size={20} className="text-white shrink-0" />
+          <p className="text-white font-semibold">Thông báo quan trọng</p>
+        </div>
+        <div className="p-5">
+          <p className="font-semibold text-slate-800 mb-2">{current.title}</p>
+          <p className="text-sm text-slate-600 whitespace-pre-wrap max-h-64 overflow-y-auto">{current.content}</p>
+          <p className="text-[11px] text-slate-400 mt-3">{current.createdByName || "Ban quản lý Gungho"} · {fmtDate(current.createdAt)}</p>
+        </div>
+        <div className="px-5 pb-5 flex items-center justify-between">
+          {unseen.length > 1 && <span className="text-xs text-slate-400">Còn {unseen.length - 1} thông báo quan trọng khác</span>}
+          <PrimaryButton className="ml-auto" onClick={dismiss}>
+            <CheckCircle2 size={15} /> Đã đọc, tiếp tục
+          </PrimaryButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function AnnouncementsPage({ currentUser, announcements, onAdd, onUpdate, onDelete }) {
   const isAdmin = currentUser.role === "admin";
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const visible = announcements
-    .filter((a) => a.targetRoles.includes("all") || a.targetRoles.includes(currentUser.role))
+  const visible = (isAdmin ? [...announcements] : announcements.filter((a) => a.targetRoles.includes("all") || a.targetRoles.includes(currentUser.role)))
     .sort((a, b) => (b.isPinned - a.isPinned) || (new Date(b.createdAt) - new Date(a.createdAt)));
 
   const handleAdd = async (payload) => {
@@ -1878,7 +1939,7 @@ function AnnouncementsPage({ currentUser, announcements, onAdd, onUpdate, onDele
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <SectionTitle icon={Megaphone} title="Thông báo & Hướng dẫn sử dụng" subtitle={isAdmin ? "Đăng thông báo, hướng dẫn cho từng vai trò trong hệ thống" : "Các thông báo và hướng dẫn từ Ban quản lý Gungho"} />
+        <SectionTitle icon={Megaphone} title="Thông báo & Hướng dẫn sử dụng" subtitle={isAdmin ? `Lịch sử toàn bộ ${announcements.length} thông báo đã gửi — đăng mới, sửa hoặc xoá tại đây` : "Các thông báo và hướng dẫn từ Ban quản lý Gungho"} />
         {isAdmin && !showForm && !editing && (
           <PrimaryButton onClick={() => setShowForm(true)}><Plus size={15} /> Đăng thông báo mới</PrimaryButton>
         )}
