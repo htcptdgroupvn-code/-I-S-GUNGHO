@@ -1726,6 +1726,19 @@ const ANNOUNCEMENT_ROLE_OPTIONS = [
   { key: "ke_toan", label: "Kế toán" },
 ];
 
+// Cho phép gõ **chữ cần nhấn mạnh** trong nội dung thông báo — tự động in đậm,
+// tô màu đỏ khi hiển thị (giống cách bôi đậm quen thuộc).
+function renderHighlightedText(text) {
+  if (!text) return null;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <span key={i} className="text-rose-600 font-bold">{part.slice(2, -2)}</span>;
+    }
+    return <React.Fragment key={i}>{part}</React.Fragment>;
+  });
+}
+
 function AnnouncementForm({ initial, onSubmit, onCancel, saving }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [content, setContent] = useState(initial?.content || "");
@@ -1765,6 +1778,7 @@ function AnnouncementForm({ initial, onSubmit, onCancel, saving }) {
             placeholder="Nội dung hướng dẫn / thông báo chi tiết..."
             className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
           />
+          <span className="block text-[11px] text-slate-400 mt-1">Mẹo: gõ **chữ cần nhấn mạnh** (2 dấu sao 2 bên) để tự động in đậm, tô đỏ khi hiển thị.</span>
         </label>
         <div>
           <span className="block text-xs font-medium text-slate-600 mb-2">Áp dụng cho</span>
@@ -1844,7 +1858,7 @@ function AnnouncementCard({ a, isAdmin, onEdit, onDelete }) {
           </div>
         )}
       </div>
-      <p className="text-sm text-slate-600 mt-2 whitespace-pre-wrap">{a.content}</p>
+      <p className="text-sm text-slate-600 mt-2 whitespace-pre-wrap">{renderHighlightedText(a.content)}</p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-400">
         <span>{a.createdByName || "Ban quản lý Gungho"}</span>
         <span>·</span>
@@ -1892,7 +1906,7 @@ function UrgentAnnouncementModal({ currentUser, announcements }) {
         </div>
         <div className="p-5">
           <p className="font-semibold text-slate-800 mb-2">{current.title}</p>
-          <p className="text-sm text-slate-600 whitespace-pre-wrap max-h-64 overflow-y-auto">{current.content}</p>
+          <p className="text-sm text-slate-600 whitespace-pre-wrap max-h-64 overflow-y-auto">{renderHighlightedText(current.content)}</p>
           <p className="text-[11px] text-slate-400 mt-3">{current.createdByName || "Ban quản lý Gungho"} · {fmtDate(current.createdAt)}</p>
         </div>
         <div className="px-5 pb-5 flex items-center justify-between">
