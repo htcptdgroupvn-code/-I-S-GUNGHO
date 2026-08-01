@@ -1886,7 +1886,7 @@ export default function App() {
           />
         )}
         {tab === "tai_khoan" && (
-          <AdminAccountsPage currentUser={currentUser} employees={employees} />
+          <AdminAccountsPage currentUser={currentUser} employees={USERS} />
         )}
         </TabErrorBoundary>
       </div>
