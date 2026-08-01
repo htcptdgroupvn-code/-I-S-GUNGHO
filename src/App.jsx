@@ -672,6 +672,7 @@ function mapOrder(o) {
     finalAmount: o.final_amount === null || o.final_amount === undefined ? undefined : Number(o.final_amount),
     commissionAmount: Number(o.commission_amount) || 0,
     invoiceName: o.invoice_name || "", invoiceNumber: o.invoice_number || "",
+    expectedServiceDate: o.expected_service_date || "",
     createdBy: o.created_by, createdByName: o.created_by_name,
     assignedHandler: o.assigned_handler, assignedHandlerName: o.assigned_handler_name,
     status: o.status, handlerNote: o.handler_note, accountantNote: o.accountant_note,
@@ -686,6 +687,7 @@ function orderToRow(o) {
   return {
     order_code: o.orderCode, customer_id: o.customerId, customer_name: o.customerName, customer_phone: o.customerPhone, customer_code: o.customerCode,
     company: o.company, store: o.store, store_address: o.storeAddress, product: o.product,
+    expected_service_date: o.expectedServiceDate || null,
     quantity: o.quantity ?? 0, total_amount: o.totalAmount ?? 0, discount_amount: o.discountAmount ?? 0,
     final_amount: o.finalAmount ?? null, commission_amount: o.commissionAmount ?? 0,
     created_by: o.createdBy, created_by_name: o.createdByName,
@@ -1234,14 +1236,14 @@ export default function App() {
     showToast("Đã xoá thông báo");
   };
 
-  const createOrder = async ({ customerId, company, store, storeAddress, product, handlerId }) => {
+  const createOrder = async ({ customerId, company, store, storeAddress, product, handlerId, expectedServiceDate }) => {
     const cust = customers.find((c) => c.id === customerId);
     const handler = handlerId ? userById(handlerId) : null;
     const status = handler ? "cho_xu_ly" : "cho_phan_cong";
     const orderDraft = {
       orderCode: genOrderCode(orders),
       customerId, customerName: cust?.name, customerPhone: cust?.phone, customerCode: cust?.customerCode,
-      company, store, storeAddress, product, totalAmount: 0,
+      company, store, storeAddress, product, totalAmount: 0, expectedServiceDate: expectedServiceDate || null,
       createdBy: currentUser.id, createdByName: currentUser.name,
       assignedHandler: handler?.id || null, assignedHandlerName: handler?.name || null,
       status, handlerNote: "", discountAmount: 0, commissionAmount: 0, accountantNote: "",
@@ -1998,6 +2000,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
     store: defaultBranch.name,
     product: defaultProducts[0] || "",
     handlerId: "",
+    expectedServiceDate: "",
   });
   const [customProduct, setCustomProduct] = useState(false);
 
@@ -2018,7 +2021,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
     setSaving(true);
     try {
       await onCreate({ ...form, storeAddress: selectedBranch?.address || "" });
-      setForm({ customerId: "", company: defaultBranch.company, store: defaultBranch.name, product: defaultProducts[0] || "", handlerId: "" });
+      setForm({ customerId: "", company: defaultBranch.company, store: defaultBranch.name, product: defaultProducts[0] || "", handlerId: "", expectedServiceDate: "" });
       setCustomProduct(false);
       setShowForm(false);
     } catch (e) {
@@ -2102,6 +2105,12 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
               <option value="">— Không chọn, gửi về trưởng đơn vị —</option>
               {handlers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </SelectField>
+            <TextField
+              label="Thời gian dự kiến sử dụng dịch vụ"
+              type="date"
+              value={form.expectedServiceDate}
+              onChange={(e) => setForm({ ...form, expectedServiceDate: e.target.value })}
+            />
             {error && (
               <p className="sm:col-span-2 text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>
             )}
@@ -2141,6 +2150,9 @@ function OrderRow({ order, showCommission, right }) {
           </p>
           {order.assignedHandlerName && (
             <p className="text-xs text-slate-400 mt-1">Người chăm sóc: {order.assignedHandlerName}</p>
+          )}
+          {order.expectedServiceDate && (
+            <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Clock size={12} /> Dự kiến sử dụng dịch vụ: {fmtDate(order.expectedServiceDate)}</p>
           )}
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú: {order.handlerNote}</p>}
         </div>
@@ -2484,6 +2496,9 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
           <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><Phone size={13} /> {order.customerPhone}</p>
           <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
           <p className="text-xs text-slate-400 mt-1">Đại sứ phụ trách: {order.createdByName}</p>
+          {order.expectedServiceDate && (
+            <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><Clock size={12} /> Dự kiến sử dụng dịch vụ: {fmtDate(order.expectedServiceDate)}</p>
+          )}
         </div>
       </div>
       <TextAreaField label="Ghi chú chăm sóc (gửi về Đại sứ Gungho)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ví dụ: đã liên hệ, khách đang cân nhắc..." />
