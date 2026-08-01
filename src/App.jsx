@@ -5,7 +5,7 @@ import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   Send, UserPlus, ShoppingBag, TrendingUp, Award, Store, Wallet,
   ArrowRightLeft, RefreshCw, Phone, MapPin, Plus, ChevronRight, Inbox,
-  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search, Megaphone, Pin, Pencil, Trash2, Lock
+  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search, Megaphone, Pin, Pencil, Trash2, Lock, ShieldCheck
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -1182,6 +1182,126 @@ function ForcePasswordChangeGate({ currentUser, onChanged, onLogout }) {
 }
 
 // ---------------------------------------------------------------------------
+// Quản lý tài khoản (Admin) — tra cứu + đặt lại mật khẩu cho nhân sự
+// ---------------------------------------------------------------------------
+function ResetPasswordModal({ currentUser, employee, onClose, onSuccess }) {
+  const [adminPassword, setAdminPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("123456");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!adminPassword) {
+      setError("Vui lòng nhập mật khẩu của chính bạn (Admin) để xác nhận.");
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      setError("Mật khẩu mới cần ít nhất 6 ký tự.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const { data, error: qErr } = await supabase.rpc("admin_reset_password", {
+        p_admin_id: currentUser.id,
+        p_admin_password: adminPassword,
+        p_target_employee_id: employee.id,
+        p_new_password: newPassword,
+      });
+      if (qErr) throw qErr;
+      if (!data) {
+        setError("Mật khẩu Admin không đúng, vui lòng thử lại.");
+        return;
+      }
+      onSuccess();
+    } catch (e) {
+      console.error(e);
+      setError("Không đặt lại được mật khẩu, vui lòng thử lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5">
+        <div className="flex items-center justify-between mb-1">
+          <p className="font-semibold text-slate-800 flex items-center gap-2"><Lock size={17} className="text-teal-700" /> Đặt lại mật khẩu</p>
+          <button onClick={onClose}><X size={18} className="text-slate-400" /></button>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">Cho tài khoản: <span className="font-medium text-slate-700">{employee.name}</span> ({employee.employeeCode})</p>
+        <div className="space-y-3">
+          <TextField label="Mật khẩu tạm thời mới" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <p className="text-[11px] text-slate-400 -mt-2">Nhân viên sẽ bị bắt buộc đổi mật khẩu này trong 24h kể từ lần đăng nhập tiếp theo.</p>
+          <TextField label="Xác nhận: nhập mật khẩu của chính bạn (Admin)" type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+          {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
+          <div className="flex gap-2">
+            <PrimaryButton type="button" onClick={submit} disabled={saving}>{saving ? "Đang lưu..." : "Đặt lại mật khẩu"}</PrimaryButton>
+            <GhostButton type="button" onClick={onClose}>Hủy</GhostButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminAccountsPage({ currentUser, employees }) {
+  const [query, setQuery] = useState("");
+  const [resetting, setResetting] = useState(null);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? employees.filter((e) => e.name?.toLowerCase().includes(q) || e.employeeCode?.toLowerCase().includes(q) || e.store?.toLowerCase().includes(q))
+    : employees;
+
+  return (
+    <div>
+      <SectionTitle icon={ShieldCheck} title="Quản lý tài khoản" subtitle={`${employees.length} tài khoản nhân sự — tra cứu & đặt lại mật khẩu khi cần`} />
+      <Card className="p-3 mb-4 flex items-center gap-2">
+        <Search size={15} className="text-slate-400 shrink-0" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Tìm theo tên, mã nhân viên hoặc đơn vị..."
+          className="flex-1 text-sm outline-none placeholder:text-slate-400"
+        />
+        {query && <button onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600"><X size={15} /></button>}
+      </Card>
+      {filtered.length === 0 ? (
+        <EmptyState icon={Search} text="Không tìm thấy tài khoản phù hợp." />
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((e) => (
+            <Card key={e.id} className="p-3.5 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+                  {e.name?.split(" ").slice(-1)[0][0]}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-800 truncate">{e.name} <span className="text-slate-400 font-normal">({e.employeeCode})</span></p>
+                  <p className="text-xs text-slate-400 truncate">{ROLE_META[e.role]?.short || e.role} {e.store ? `· ${e.store}` : ""}{e.mustChangePassword ? " · Đang chờ đổi mật khẩu" : ""}</p>
+                </div>
+              </div>
+              <GhostButton className="!text-xs shrink-0" onClick={() => setResetting(e)}>
+                <Lock size={13} /> Đặt lại mật khẩu
+              </GhostButton>
+            </Card>
+          ))}
+        </div>
+      )}
+      {resetting && (
+        <ResetPasswordModal
+          currentUser={currentUser}
+          employee={resetting}
+          onClose={() => setResetting(null)}
+          onSuccess={() => setResetting(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Notification bell
 // ---------------------------------------------------------------------------
 
@@ -1621,12 +1741,15 @@ export default function App() {
   const GROUP_THONG_BAO = [
     { key: "thong_bao", label: "Thông báo", icon: Megaphone },
   ];
+  const GROUP_TAI_KHOAN = [
+    { key: "tai_khoan", label: "Tài khoản", icon: ShieldCheck },
+  ];
   const NAV_GROUPS = {
     dai_su: [GROUP_BAN_HANG, GROUP_THONG_BAO],
     xu_ly: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
     cht: [GROUP_BAN_HANG, GROUP_QUAN_LY, GROUP_THONG_BAO],
     ke_toan: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
-    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN, GROUP_THONG_BAO],
+    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN, GROUP_THONG_BAO, GROUP_TAI_KHOAN],
   };
   const navGroups = NAV_GROUPS[currentUser.role];
 
@@ -1727,6 +1850,9 @@ export default function App() {
             onUpdate={updateAnnouncement}
             onDelete={deleteAnnouncement}
           />
+        )}
+        {tab === "tai_khoan" && (
+          <AdminAccountsPage currentUser={currentUser} employees={employees} />
         )}
       </div>
       {showChangePassword && (
