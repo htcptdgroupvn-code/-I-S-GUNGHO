@@ -733,6 +733,39 @@ async function fetchAll() {
 
 const SESSION_KEY = "gungho_session_employee_id";
 
+// Chặn lỗi phát sinh trong 1 tab lan ra làm sập toàn bộ giao diện — khi có lỗi,
+// chỉ vùng nội dung báo lỗi, thanh menu phía trên vẫn dùng được bình thường.
+class TabErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error, info) {
+    console.error("Lỗi hiển thị tab:", error, info);
+  }
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-white rounded-2xl border border-rose-200 shadow-sm p-6 text-center">
+          <AlertCircle size={28} className="text-rose-500 mx-auto mb-2" />
+          <p className="font-medium text-slate-800 mb-1">Không hiển thị được mục này</p>
+          <p className="text-sm text-slate-500 mb-4">Đã có lỗi xảy ra. Bạn có thể chuyển sang mục khác từ thanh menu phía trên, hoặc tải lại trang.</p>
+          <GhostButton onClick={() => window.location.reload()}>Tải lại trang</GhostButton>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Small UI atoms
 // ---------------------------------------------------------------------------
@@ -1275,7 +1308,7 @@ function AdminAccountsPage({ currentUser, employees }) {
             <Card key={e.id} className="p-3.5 flex items-center justify-between gap-3">
               <div className="min-w-0 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center text-xs font-semibold shrink-0">
-                  {e.name?.split(" ").slice(-1)[0][0]}
+                  {e.name && e.name.trim() ? e.name.trim().split(" ").slice(-1)[0][0] : "?"}
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-slate-800 truncate">{e.name} <span className="text-slate-400 font-normal">({e.employeeCode})</span></p>
@@ -1818,6 +1851,7 @@ export default function App() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6">
+        <TabErrorBoundary resetKey={tab}>
         {tab === "khach_hang" && (
           <DaiSuKhachHang currentUser={currentUser} customers={customers} orders={orders} onAdd={addCustomer} />
         )}
@@ -1854,6 +1888,7 @@ export default function App() {
         {tab === "tai_khoan" && (
           <AdminAccountsPage currentUser={currentUser} employees={employees} />
         )}
+        </TabErrorBoundary>
       </div>
       {showChangePassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
