@@ -5,7 +5,7 @@ import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   Send, UserPlus, ShoppingBag, TrendingUp, Award, Store, Wallet,
   ArrowRightLeft, RefreshCw, Phone, MapPin, Plus, ChevronRight, Inbox,
-  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search, Megaphone, Pin, Pencil, Trash2
+  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search, Megaphone, Pin, Pencil, Trash2, Lock
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -653,7 +653,10 @@ const userById = (id) => USERS.find((u) => u.id === id);
 // ---- Supabase data mapping (DB dùng snake_case, app dùng camelCase) ----
 
 function mapEmployee(e) {
-  return { id: e.id, employeeCode: e.employee_code, name: e.name, role: e.role, store: e.store, position: e.position };
+  return {
+    id: e.id, employeeCode: e.employee_code, name: e.name, role: e.role, store: e.store, position: e.position,
+    mustChangePassword: !!e.must_change_password, passwordChangeDeadline: e.password_change_deadline || null,
+  };
 }
 function mapCustomer(c) {
   return {
@@ -708,7 +711,7 @@ function mapAnnouncement(a) {
 
 async function fetchAll() {
   const [emp, cust, ord, notif, announ] = await Promise.all([
-    supabase.from("employees").select("*"),
+    supabase.from("employees").select("id,employee_code,name,role,store,position,must_change_password,password_change_deadline"),
     supabase.from("customers").select("*").order("created_at", { ascending: false }),
     supabase.from("orders").select("*").order("created_at", { ascending: false }),
     supabase.from("notifications").select("*").order("created_at", { ascending: false }),
@@ -971,26 +974,73 @@ function LoginScreen({ onLogin }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const LOCK_KEY_PREFIX = "gungho_login_fail_";
+  const MAX_ATTEMPTS = 5;
+  const LOCK_MINUTES = 5;
+
+  const getFailState = (loginCode) => {
+    try {
+      return JSON.parse(localStorage.getItem(LOCK_KEY_PREFIX + loginCode) || "null");
+    } catch {
+      return null;
+    }
+  };
+  const setFailState = (loginCode, state) => {
+    try {
+      localStorage.setItem(LOCK_KEY_PREFIX + loginCode, JSON.stringify(state));
+    } catch {}
+  };
+
   const handleSubmit = async () => {
     if (!code.trim() || !password) {
       setError("Vui lòng nhập mã nhân viên và mật khẩu.");
       return;
     }
+    const loginCode = code.trim();
+
+    // Chặn brute-force: quá 5 lần sai liên tiếp thì khoá tạm 5 phút cho đúng mã này
+    const fail = getFailState(loginCode);
+    if (fail && fail.count >= MAX_ATTEMPTS) {
+      const remainMs = fail.lockedAt + LOCK_MINUTES * 60_000 - Date.now();
+      if (remainMs > 0) {
+        setError(`Bạn đã nhập sai quá ${MAX_ATTEMPTS} lần. Vui lòng thử lại sau ${Math.ceil(remainMs / 60000)} phút.`);
+        return;
+      }
+      setFailState(loginCode, null);
+    }
+
     setError("");
     setLoading(true);
     try {
-      const { data, error: qErr } = await supabase
-        .from("employees")
-        .select("*")
-        .eq("employee_code", code.trim())
-        .eq("password", password)
-        .maybeSingle();
+      const { data, error: qErr } = await supabase.rpc("verify_employee_login", {
+        p_code: loginCode,
+        p_password: password,
+      });
       if (qErr) throw qErr;
-      if (!data) {
-        setError("Mã nhân viên hoặc mật khẩu không đúng.");
+      const employee = Array.isArray(data) ? data[0] : data;
+      if (!employee) {
+        const prev = getFailState(loginCode) || { count: 0 };
+        const nextCount = prev.count + 1;
+        setFailState(loginCode, { count: nextCount, lockedAt: nextCount >= MAX_ATTEMPTS ? Date.now() : null });
+        setError(
+          nextCount >= MAX_ATTEMPTS
+            ? `Sai mật khẩu quá ${MAX_ATTEMPTS} lần. Tài khoản bị khoá tạm ${LOCK_MINUTES} phút.`
+            : "Mã nhân viên hoặc mật khẩu không đúng."
+        );
         return;
       }
-      onLogin(mapEmployee(data));
+      if (employee.locked) {
+        setError("Tài khoản đã bị khoá do không đổi mật khẩu đúng hạn trong 24 giờ. Vui lòng liên hệ Admin để được mở khoá.");
+        return;
+      }
+      setFailState(loginCode, null);
+      let mapped = mapEmployee(employee);
+      if (mapped.mustChangePassword && !mapped.passwordChangeDeadline) {
+        // Lần đầu bị yêu cầu đổi mật khẩu — bắt đầu tính đồng hồ 24 giờ ngay từ lúc này
+        const { data: deadline } = await supabase.rpc("start_password_deadline", { p_employee_id: mapped.id });
+        if (deadline) mapped = { ...mapped, passwordChangeDeadline: deadline };
+      }
+      onLogin(mapped);
     } catch (e) {
       console.error(e);
       setError("Không kết nối được máy chủ, vui lòng thử lại.");
@@ -1017,6 +1067,115 @@ function LoginScreen({ onLogin }) {
             {loading ? "Đang đăng nhập..." : "Đăng nhập"}
           </PrimaryButton>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Đổi mật khẩu (dùng chung cho: đổi tự nguyện & bắt buộc sau khi đăng nhập)
+// ---------------------------------------------------------------------------
+function ChangePasswordForm({ currentUser, onSuccess, onCancel, mandatory }) {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setError("Vui lòng điền đủ các ô.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError("Mật khẩu mới cần ít nhất 6 ký tự.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const { data, error: qErr } = await supabase.rpc("change_own_password", {
+        p_employee_id: currentUser.id,
+        p_old_password: oldPassword,
+        p_new_password: newPassword,
+      });
+      if (qErr) throw qErr;
+      if (!data) {
+        setError("Mật khẩu hiện tại không đúng.");
+        return;
+      }
+      onSuccess();
+    } catch (e) {
+      console.error(e);
+      setError("Không đổi được mật khẩu, vui lòng thử lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <TextField label="Mật khẩu hiện tại" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} />
+      <TextField label="Mật khẩu mới (tối thiểu 6 ký tự)" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+      <TextField label="Xác nhận mật khẩu mới" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
+      <div className="flex gap-2">
+        <PrimaryButton type="button" onClick={submit} disabled={saving} className={mandatory ? "w-full justify-center" : ""}>
+          {saving ? "Đang lưu..." : "Đổi mật khẩu"}
+        </PrimaryButton>
+        {!mandatory && onCancel && <GhostButton type="button" onClick={onCancel}>Hủy</GhostButton>}
+      </div>
+    </div>
+  );
+}
+
+function fmtCountdown(ms) {
+  if (ms <= 0) return "00:00:00";
+  const totalSec = Math.floor(ms / 1000);
+  const h = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+  const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+  const s = String(totalSec % 60).padStart(2, "0");
+  return `${h}:${m}:${s}`;
+}
+
+// Màn chặn toàn bộ app — bắt buộc đổi mật khẩu trong 24h kể từ lần đầu bị yêu cầu.
+function ForcePasswordChangeGate({ currentUser, onChanged, onLogout }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const deadline = currentUser.passwordChangeDeadline ? new Date(currentUser.passwordChangeDeadline).getTime() : null;
+  const remainMs = deadline ? deadline - now : null;
+  const expired = remainMs !== null && remainMs <= 0;
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-rose-50 via-slate-50 to-slate-50 px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-rose-600 to-rose-700 mx-auto mb-3 flex items-center justify-center shadow-lg shadow-rose-900/25">
+            <Lock size={26} className="text-white" />
+          </div>
+          <h1 className="text-xl font-semibold text-slate-800">Yêu cầu đổi mật khẩu</h1>
+          <p className="text-sm text-slate-500 mt-1">Vì lý do bảo mật, bạn cần đặt mật khẩu mới trước khi tiếp tục sử dụng app.</p>
+          {!expired && deadline && (
+            <p className="text-sm text-rose-600 font-semibold mt-2">Thời gian còn lại: {fmtCountdown(remainMs)}</p>
+          )}
+          {expired && (
+            <p className="text-sm text-rose-600 font-semibold mt-2">Đã hết hạn 24 giờ — tài khoản đã bị khoá. Vui lòng liên hệ Admin để được mở lại.</p>
+          )}
+        </div>
+        {!expired ? (
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-900/5 p-5">
+            <ChangePasswordForm currentUser={currentUser} mandatory onSuccess={onChanged} />
+          </div>
+        ) : (
+          <GhostButton className="w-full justify-center" onClick={onLogout}>Đăng xuất</GhostButton>
+        )}
       </div>
     </div>
   );
@@ -1086,6 +1245,7 @@ function NotifBell({ notifications, currentUser, onMarkRead }) {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -1427,6 +1587,19 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
+  if (currentUser.mustChangePassword) {
+    return (
+      <ForcePasswordChangeGate
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onChanged={() => {
+          setCurrentUser((prev) => prev && { ...prev, mustChangePassword: false, passwordChangeDeadline: null });
+          showToast("Đã đổi mật khẩu thành công");
+        }}
+      />
+    );
+  }
+
   const GROUP_BAN_HANG = [
     { key: "khach_hang", label: "Khách hàng", icon: Users },
     { key: "don_hang_ds", label: "Đơn hàng của tôi", icon: ClipboardList },
@@ -1487,6 +1660,9 @@ export default function App() {
                 <p className="text-xs font-medium text-slate-800">{currentUser.name}</p>
                 <p className="text-[11px] text-slate-400">{currentUser.store || ROLE_META[currentUser.role].short}</p>
               </div>
+              <button onClick={() => setShowChangePassword(true)} className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition" title="Đổi mật khẩu">
+                <Lock size={14} className="text-slate-500" />
+              </button>
               <button onClick={handleLogout} className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition" title="Đổi tài khoản">
                 <LogOut size={14} className="text-slate-500" />
               </button>
@@ -1553,6 +1729,24 @@ export default function App() {
           />
         )}
       </div>
+      {showChangePassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-semibold text-slate-800 flex items-center gap-2"><Lock size={17} className="text-teal-700" /> Đổi mật khẩu</p>
+              <button onClick={() => setShowChangePassword(false)}><X size={18} className="text-slate-400" /></button>
+            </div>
+            <ChangePasswordForm
+              currentUser={currentUser}
+              onCancel={() => setShowChangePassword(false)}
+              onSuccess={() => {
+                setShowChangePassword(false);
+                showToast("Đã đổi mật khẩu thành công");
+              }}
+            />
+          </div>
+        </div>
+      )}
       <Toast toast={toast} />
     </div>
   );
