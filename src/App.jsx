@@ -627,6 +627,31 @@ const STATUS_META = {
 // Gungho cho Đại sứ, nhưng KHÔNG ghi nhận hoa hồng Gungho.
 const HTC_COMPANY_NAME = "III. HTC";
 const HTC_AUTO_CLOSE_DAYS = 30;
+const TM1_COMPANY_NAME = "I. Công ty Cổ phần Thương mại I - Khối xe máy";
+
+// Quy định: nếu Ngày đăng ký (ngày tạo đơn) SỚM HƠN Ngày đặt cọc, thì việc có
+// tính hoa hồng hay không phụ thuộc khoảng cách (theo NGÀY, không tính giờ)
+// từ Ngày đăng ký tới Ngày sử dụng dịch vụ — CHỈ ÁP DỤNG cho khối TM1 (xe máy):
+//   - Đúng 1 ngày trước (hoặc gần hơn): chỉ tính CHỈ TIÊU, KHÔNG tính hoa hồng.
+//   - Hơn 1 ngày trước: tính đầy đủ cả chỉ tiêu VÀ hoa hồng (không thay đổi gì).
+// Nếu thiếu dữ liệu (chưa có ngày đặt cọc/ngày sử dụng dịch vụ) hoặc ngày đăng
+// ký KHÔNG sớm hơn ngày đặt cọc thì áp dụng bình thường (không can thiệp).
+function toDateOnly(isoOrDate) {
+  if (!isoOrDate) return null;
+  const d = new Date(isoOrDate);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function shouldZeroCommissionByDateRule(order) {
+  if (order.company !== TM1_COMPANY_NAME) return false; // chỉ áp dụng cho TM1 (xe máy)
+  const registeredDate = toDateOnly(order.createdAt);
+  const depositDate = toDateOnly(order.depositDate);
+  const serviceDate = toDateOnly(order.serviceUseDate);
+  if (!registeredDate || !depositDate || !serviceDate) return false;
+  if (registeredDate.getTime() >= depositDate.getTime()) return false; // chỉ áp dụng khi đăng ký sớm hơn đặt cọc
+  const daysBeforeUse = Math.round((serviceDate.getTime() - registeredDate.getTime()) / 86400000);
+  return daysBeforeUse <= 1; // đăng ký trước dịch vụ đúng 1 ngày (hoặc ít hơn) -> không tính hoa hồng
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -684,6 +709,7 @@ function mapOrder(o) {
     commissionAmount: Number(o.commission_amount) || 0,
     invoiceName: o.invoice_name || "", invoiceNumber: o.invoice_number || "", transactionCode: o.transaction_code || "",
     expectedServiceDate: o.expected_service_date || "",
+    depositDate: o.deposit_date || "", serviceUseDate: o.service_use_date || "",
     createdBy: o.created_by, createdByName: o.created_by_name, createdByPhone: o.created_by_phone || "", createdByStore: o.created_by_store || "",
     assignedHandler: o.assigned_handler, assignedHandlerName: o.assigned_handler_name,
     status: o.status, handlerNote: o.handler_note, accountantNote: o.accountant_note,
@@ -1690,8 +1716,9 @@ export default function App() {
     showToast("Đã xác nhận chăm sóc");
   };
 
-  const forwardToAccounting = async (orderId, note, htcInfo) => {
+  const forwardToAccounting = async (orderId, note, extra) => {
     const order = orders.find((o) => o.id === orderId);
+    const htcInfo = extra && extra.invoiceName !== undefined ? extra : null;
     const historyLine = htcInfo
       ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua). Số tiền: ${fmtMoney(htcInfo.amount)} · Giảm giá: ${fmtMoney(htcInfo.discountAmount)} · Tên xuất HĐ: ${htcInfo.invoiceName} · Số HĐ: ${htcInfo.invoiceNumber}`
       : `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua)`;
@@ -1703,6 +1730,8 @@ export default function App() {
       patch.invoice_name = htcInfo.invoiceName;
       patch.invoice_number = htcInfo.invoiceNumber;
     }
+    if (extra?.depositDate !== undefined) patch.deposit_date = extra.depositDate;
+    if (extra?.serviceUseDate !== undefined) patch.service_use_date = extra.serviceUseDate;
     await updateOrder(orderId, patch);
     const storeAccountants = USERS.filter((u) => u.role === "ke_toan" && u.store === order.store);
     const targets = storeAccountants.length > 0 ? storeAccountants : USERS.filter((u) => u.role === "ke_toan");
@@ -1729,18 +1758,20 @@ export default function App() {
     const order = orders.find((o) => o.id === orderId);
     const totalAmount = Number(amount) || 0;
     const finalAmount = Math.max(totalAmount - Number(discountAmount || 0), 0);
-    const newHistory = [
-      ...order.history,
-      `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}, cập nhật hoa hồng ${fmtMoney(commissionAmount)}`,
-    ];
+    const zeroCommissionByDateRule = shouldZeroCommissionByDateRule(order);
+    const finalCommission = zeroCommissionByDateRule ? 0 : Number(commissionAmount) || 0;
+    const historyLine = zeroCommissionByDateRule
+      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}. Đăng ký sớm hơn 1 ngày trước khi sử dụng dịch vụ (và trước ngày đặt cọc) — chỉ ghi nhận chỉ tiêu, không tính hoa hồng.`
+      : `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}, cập nhật hoa hồng ${fmtMoney(finalCommission)}`;
+    const newHistory = [...order.history, historyLine];
     await updateOrder(orderId, {
       status: "da_thanh_toan", total_amount: totalAmount, discount_amount: Number(discountAmount) || 0,
-      final_amount: finalAmount, commission_amount: Number(commissionAmount) || 0, quantity: Number(quantity) || 1,
+      final_amount: finalAmount, commission_amount: finalCommission, quantity: Number(quantity) || 1,
       accountant_note: note, history: newHistory, updated_at: new Date().toISOString(),
       invoice_name: invoiceName || order.invoiceName || "", transaction_code: transactionCode || "",
     });
     await insertNotifications([
-      notifRow(order.createdBy, `Đơn hàng của khách "${order.customerName}" đã được kế toán xác nhận thanh toán. Hoa hồng: ${fmtMoney(commissionAmount)}.`, orderId),
+      notifRow(order.createdBy, `Đơn hàng của khách "${order.customerName}" đã được kế toán xác nhận thanh toán. Hoa hồng: ${fmtMoney(finalCommission)}.`, orderId),
     ]);
     await refreshAll();
     showToast("Đã xác nhận thanh toán");
@@ -2905,6 +2936,8 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
   const [discount, setDiscount] = useState(order.discountAmount || 0);
   const [invoiceName, setInvoiceName] = useState(order.invoiceName || "");
   const [invoiceNumber, setInvoiceNumber] = useState(order.invoiceNumber || "");
+  const [depositDate, setDepositDate] = useState(order.depositDate || "");
+  const [serviceUseDate, setServiceUseDate] = useState(order.serviceUseDate || order.expectedServiceDate || "");
   const [invoiceError, setInvoiceError] = useState("");
 
   const handleForward = () => {
@@ -2917,9 +2950,10 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
       onForward(order.id, note, {
         amount: Number(amount) || 0, discountAmount: Number(discount) || 0,
         invoiceName: invoiceName.trim(), invoiceNumber: invoiceNumber.trim(),
+        depositDate: depositDate || null, serviceUseDate: serviceUseDate || null,
       });
     } else {
-      onForward(order.id, note);
+      onForward(order.id, note, { depositDate: depositDate || null, serviceUseDate: serviceUseDate || null });
     }
   };
 
@@ -2941,12 +2975,22 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
             {ambassadorPhone(order) && <> · <Phone size={11} className="inline -mt-0.5" /> {ambassadorPhone(order)}</>}
             {order.createdByStore && <> · {order.createdByStore}</>}
           </p>
+          <p className="text-xs text-slate-400 mt-1 flex items-center gap-1"><Clock size={12} /> Thời gian đăng ký: {fmtDate(order.createdAt)}</p>
           {order.expectedServiceDate && (
             <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><Clock size={12} /> Dự kiến sử dụng dịch vụ: {fmtDate(order.expectedServiceDate)}</p>
           )}
         </div>
       </div>
       <TextAreaField label="Ghi chú chăm sóc (gửi về Đại sứ Gungho)" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ví dụ: đã liên hệ, khách đang cân nhắc..." />
+      {order.status === "dang_cham_soc" && order.company === TM1_COMPANY_NAME && (
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <p className="text-xs font-medium text-slate-600 mb-2">Ngày đặt cọc & ngày sử dụng dịch vụ (riêng khối TM1 xe máy — ảnh hưởng tới điều kiện tính chỉ tiêu/hoa hồng, điền khi khách đã chốt)</p>
+          <div className="grid sm:grid-cols-2 gap-3 mb-3">
+            <TextField label="Ngày đặt cọc" type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
+            <TextField label="Ngày sử dụng dịch vụ" type="date" value={serviceUseDate} onChange={(e) => setServiceUseDate(e.target.value)} />
+          </div>
+        </div>
+      )}
       {order.status === "dang_cham_soc" && isHTCOrder && (
         <div className="mt-3 pt-3 border-t border-slate-100">
           <p className="text-xs font-medium text-slate-600 mb-2">Thông tin đơn hàng & hóa đơn (riêng khối HTC — điền trước khi chuyển kế toán)</p>
@@ -3450,13 +3494,25 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
             Đại sứ: {order.createdByName}{ambassadorPhone(order) ? ` (${ambassadorPhone(order)})` : ""} · Người chăm sóc: {order.assignedHandlerName}
           </p>
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
+          <p className="text-xs text-slate-400 mt-1 flex items-center gap-1"><Clock size={12} /> Thời gian đăng ký: {fmtDate(order.createdAt)}</p>
+          {order.company === TM1_COMPANY_NAME && (order.depositDate || order.serviceUseDate) && (
+            <p className="text-xs text-slate-400 mt-1">
+              {order.depositDate && <>Ngày đặt cọc: {fmtDate(order.depositDate)} </>}
+              {order.serviceUseDate && <>· Ngày sử dụng dịch vụ: {fmtDate(order.serviceUseDate)}</>}
+            </p>
+          )}
+          {order.company === TM1_COMPANY_NAME && shouldZeroCommissionByDateRule(order) && (
+            <p className="text-xs text-rose-600 font-medium mt-1 flex items-center gap-1"><AlertCircle size={12} /> Đăng ký sớm hơn 1 ngày trước sử dụng dịch vụ (và trước ngày đặt cọc) — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
+          )}
         </div>
       </div>
       <InvoiceInfoStrip order={order} />
-      <div className="grid sm:grid-cols-2 gap-3 mb-3">
-        <TextField label="Tên KH xuất HĐ" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
-        <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
-      </div>
+      {order.company === TM1_COMPANY_NAME && (
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <TextField label="Tên KH xuất HĐ" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
+          <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
+        </div>
+      )}
       <div className="grid sm:grid-cols-3 gap-3">
         <MoneyField label="Số tiền đơn hàng (đ)" value={amount} onChange={setAmount} />
         <MoneyField label="Giảm giá (đ)" value={discount} onChange={setDiscount} />
@@ -3909,14 +3965,26 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
             Đại sứ: {order.createdByName}{ambassadorPhone(order) ? ` (${ambassadorPhone(order)})` : ""} · Người chăm sóc: {order.assignedHandlerName}
           </p>
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
+          <p className="text-xs text-slate-400 mt-1 flex items-center gap-1"><Clock size={12} /> Thời gian đăng ký: {fmtDate(order.createdAt)}</p>
+          {order.company === TM1_COMPANY_NAME && (order.depositDate || order.serviceUseDate) && (
+            <p className="text-xs text-slate-400 mt-1">
+              {order.depositDate && <>Ngày đặt cọc: {fmtDate(order.depositDate)} </>}
+              {order.serviceUseDate && <>· Ngày sử dụng dịch vụ: {fmtDate(order.serviceUseDate)}</>}
+            </p>
+          )}
+          {order.company === TM1_COMPANY_NAME && shouldZeroCommissionByDateRule(order) && (
+            <p className="text-xs text-rose-600 font-medium mt-1 flex items-center gap-1"><AlertCircle size={12} /> Đăng ký sớm hơn 1 ngày trước sử dụng dịch vụ (và trước ngày đặt cọc) — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
+          )}
         </div>
         <Badge className="bg-teal-50 text-teal-700 border-teal-200">Quy định thưởng Khối {groupLabel}</Badge>
       </div>
       <InvoiceInfoStrip order={order} />
-      <div className="grid sm:grid-cols-2 gap-3 mb-3">
-        <TextField label="Tên KH xuất HĐ" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
-        <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
-      </div>
+      {order.company === TM1_COMPANY_NAME && (
+        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+          <TextField label="Tên KH xuất HĐ" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
+          <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
+        </div>
+      )}
       {isHTC && order.company === HTC_COMPANY_NAME && order.updatedAt && (() => {
         const daysElapsed = (Date.now() - new Date(order.updatedAt).getTime()) / 86400000;
         const daysLeft = Math.ceil(HTC_AUTO_CLOSE_DAYS - daysElapsed);
