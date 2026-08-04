@@ -629,13 +629,14 @@ const HTC_COMPANY_NAME = "III. HTC";
 const HTC_AUTO_CLOSE_DAYS = 30;
 const TM1_COMPANY_NAME = "I. Công ty Cổ phần Thương mại I - Khối xe máy";
 
-// Quy định: nếu Ngày đăng ký (ngày tạo đơn) SỚM HƠN Ngày đặt cọc, thì việc có
-// tính hoa hồng hay không phụ thuộc khoảng cách (theo NGÀY, không tính giờ)
-// từ Ngày đăng ký tới Ngày sử dụng dịch vụ — CHỈ ÁP DỤNG cho khối TM1 (xe máy):
-//   - Đúng 1 ngày trước (hoặc gần hơn): chỉ tính CHỈ TIÊU, KHÔNG tính hoa hồng.
-//   - Hơn 1 ngày trước: tính đầy đủ cả chỉ tiêu VÀ hoa hồng (không thay đổi gì).
-// Nếu thiếu dữ liệu (chưa có ngày đặt cọc/ngày sử dụng dịch vụ) hoặc ngày đăng
-// ký KHÔNG sớm hơn ngày đặt cọc thì áp dụng bình thường (không can thiệp).
+// Quy định (chỉ áp dụng khối TM1 - xe máy):
+//   1) Nếu Ngày đăng ký SAU Ngày đặt cọc → đơn hàng tự động chuyển "Không
+//      thành công" (xem hàm shouldAutoCancelByDateRule/autoCancelLateTM1Orders).
+//   2) Nếu Ngày đăng ký BẰNG hoặc TRƯỚC Ngày đặt cọc, xét tiếp theo khoảng
+//      cách (theo NGÀY, không tính giờ) tới Ngày sử dụng dịch vụ:
+//        - Cách nhau ≤ 1 ngày: chỉ tính CHỈ TIÊU, KHÔNG tính hoa hồng.
+//        - Cách nhau > 1 ngày: tính đầy đủ cả chỉ tiêu VÀ hoa hồng.
+// Nếu thiếu dữ liệu ngày thì áp dụng bình thường (không can thiệp).
 function toDateOnly(isoOrDate) {
   if (!isoOrDate) return null;
   const d = new Date(isoOrDate);
@@ -643,14 +644,23 @@ function toDateOnly(isoOrDate) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 function shouldZeroCommissionByDateRule(order) {
-  if (order.company !== TM1_COMPANY_NAME) return false; // chỉ áp dụng cho TM1 (xe máy)
+  if (order.company !== TM1_COMPANY_NAME) return false;
   const registeredDate = toDateOnly(order.createdAt);
   const depositDate = toDateOnly(order.depositDate);
   const serviceDate = toDateOnly(order.serviceUseDate);
   if (!registeredDate || !depositDate || !serviceDate) return false;
-  if (registeredDate.getTime() >= depositDate.getTime()) return false; // chỉ áp dụng khi đăng ký sớm hơn đặt cọc
+  if (registeredDate.getTime() > depositDate.getTime()) return false; // trường hợp này bị tự động huỷ, không phải chỉ bỏ hoa hồng
   const daysBeforeUse = Math.round((serviceDate.getTime() - registeredDate.getTime()) / 86400000);
-  return daysBeforeUse <= 1; // đăng ký trước dịch vụ đúng 1 ngày (hoặc ít hơn) -> không tính hoa hồng
+  return daysBeforeUse <= 1;
+}
+// Ngày đăng ký SAU ngày đặt cọc (khối TM1) -> đơn sẽ tự động chuyển "Không
+// thành công" thay vì chỉ bỏ hoa hồng.
+function shouldAutoCancelByDateRule(order) {
+  if (order.company !== TM1_COMPANY_NAME) return false;
+  const registeredDate = toDateOnly(order.createdAt);
+  const depositDate = toDateOnly(order.depositDate);
+  if (!registeredDate || !depositDate) return false;
+  return registeredDate.getTime() > depositDate.getTime();
 }
 
 // ---------------------------------------------------------------------------
@@ -1510,7 +1520,8 @@ export default function App() {
   const refreshAll = useCallback(async () => {
     const data = await fetchAll();
     const closedCount = await autoCloseOverdueHTCOrders(data.orders);
-    const finalData = closedCount > 0 ? await fetchAll() : data;
+    const cancelledCount = await autoCancelLateTM1Orders(data.orders);
+    const finalData = (closedCount > 0 || cancelledCount > 0) ? await fetchAll() : data;
     USERS.length = 0;
     USERS.push(...finalData.employees);
     setCustomers(finalData.customers);
@@ -1520,6 +1531,9 @@ export default function App() {
     forceRerender((n) => n + 1);
     if (closedCount > 0) {
       showToast(`Đã tự động đóng ${closedCount} đơn hàng HTC quá 30 ngày chưa thanh toán`);
+    }
+    if (cancelledCount > 0) {
+      showToast(`Đã tự động chuyển "Không thành công" ${cancelledCount} đơn hàng TM1 do đăng ký sau ngày đặt cọc`);
     }
     return finalData;
   }, []);
@@ -1756,14 +1770,32 @@ export default function App() {
 
   const confirmPayment = async (orderId, { amount, discountAmount, commissionAmount, quantity, note, invoiceName, transactionCode, depositDate, serviceUseDate }) => {
     const order = orders.find((o) => o.id === orderId);
-    const totalAmount = Number(amount) || 0;
-    const finalAmount = Math.max(totalAmount - Number(discountAmount || 0), 0);
     const effectiveDepositDate = depositDate !== undefined ? depositDate : order.depositDate;
     const effectiveServiceUseDate = serviceUseDate !== undefined ? serviceUseDate : order.serviceUseDate;
+
+    if (shouldAutoCancelByDateRule({ ...order, depositDate: effectiveDepositDate })) {
+      const newHistory = [
+        ...order.history,
+        `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận: ngày đăng ký sau ngày đặt cọc — đơn tự động chuyển "Không thành công" thay vì thanh toán.`,
+      ];
+      await updateOrder(orderId, {
+        status: "khong_thanh_toan", accountant_note: note, history: newHistory, updated_at: new Date().toISOString(),
+        deposit_date: effectiveDepositDate || null, service_use_date: effectiveServiceUseDate || null,
+      });
+      await insertNotifications([
+        notifRow(order.createdBy, `Đơn hàng của khách "${order.customerName}" tự động chuyển "Không thành công" do ngày đăng ký sau ngày đặt cọc (khối TM1).`, orderId),
+      ]);
+      await refreshAll();
+      showToast('Ngày đăng ký sau ngày đặt cọc — đơn đã chuyển "Không thành công" thay vì xác nhận thanh toán');
+      return;
+    }
+
+    const totalAmount = Number(amount) || 0;
+    const finalAmount = Math.max(totalAmount - Number(discountAmount || 0), 0);
     const zeroCommissionByDateRule = shouldZeroCommissionByDateRule({ ...order, depositDate: effectiveDepositDate, serviceUseDate: effectiveServiceUseDate });
     const finalCommission = zeroCommissionByDateRule ? 0 : Number(commissionAmount) || 0;
     const historyLine = zeroCommissionByDateRule
-      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}. Đăng ký sớm hơn 1 ngày trước khi sử dụng dịch vụ (và trước ngày đặt cọc) — chỉ ghi nhận chỉ tiêu, không tính hoa hồng.`
+      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}. Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày — chỉ ghi nhận chỉ tiêu, không tính hoa hồng.`
       : `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}, cập nhật hoa hồng ${fmtMoney(finalCommission)}`;
     const newHistory = [...order.history, historyLine];
     const patch = {
@@ -1828,6 +1860,32 @@ export default function App() {
         ]);
       } catch (e) {
         console.error("auto-close HTC order failed", o.id, e);
+      }
+    }
+    return eligible.length;
+  };
+
+  // Khối TM1 (xe máy): đơn ở trạng thái "chờ kế toán" có Ngày đăng ký SAU
+  // Ngày đặt cọc sẽ tự động chuyển "Không thành công".
+  const autoCancelLateTM1Orders = async (orderList) => {
+    const eligible = orderList.filter((o) => o.status === "cho_ke_toan" && shouldAutoCancelByDateRule(o));
+    for (const o of eligible) {
+      const newHistory = [
+        ...(o.history || []),
+        `${fmtDate(new Date().toISOString())} — Hệ thống tự động chuyển "Không thành công": ngày đăng ký (${fmtDate(o.createdAt)}) sau ngày đặt cọc (${fmtDate(o.depositDate)}) — khối TM1.`,
+      ];
+      try {
+        await updateOrder(o.id, {
+          status: "khong_thanh_toan",
+          accountant_note: [o.accountantNote, "Tự động chuyển Không thành công: ngày đăng ký sau ngày đặt cọc (TM1)."].filter(Boolean).join(" | "),
+          history: newHistory,
+          updated_at: new Date().toISOString(),
+        });
+        await insertNotifications([
+          notifRow(o.createdBy, `Đơn hàng của khách "${o.customerName}" đã tự động chuyển "Không thành công" do ngày đăng ký sau ngày đặt cọc (khối TM1).`, o.id),
+        ]);
+      } catch (e) {
+        console.error("auto-cancel TM1 order failed", o.id, e);
       }
     }
     return eligible.length;
@@ -3516,8 +3574,11 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
           <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
           <TextField label="Ngày đặt cọc" type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
           <TextField label="Ngày sử dụng dịch vụ" type="date" value={serviceUseDate} onChange={(e) => setServiceUseDate(e.target.value)} />
-          {shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate }) && (
-            <p className="sm:col-span-2 text-xs text-rose-600 font-medium flex items-center gap-1"><AlertCircle size={12} /> Đăng ký sớm hơn 1 ngày trước sử dụng dịch vụ (và trước ngày đặt cọc) — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
+          {shouldAutoCancelByDateRule({ ...order, depositDate }) && (
+            <p className="sm:col-span-2 text-xs text-rose-700 font-semibold flex items-center gap-1 bg-rose-50 rounded-lg px-2 py-1.5"><XCircle size={13} /> Ngày đăng ký sau ngày đặt cọc — bấm "Xác nhận thanh toán" sẽ tự động chuyển đơn "Không thành công" thay vì thanh toán.</p>
+          )}
+          {!shouldAutoCancelByDateRule({ ...order, depositDate }) && shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate }) && (
+            <p className="sm:col-span-2 text-xs text-rose-600 font-medium flex items-center gap-1"><AlertCircle size={12} /> Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
           )}
         </div>
       )}
@@ -3990,8 +4051,11 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
           <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
           <TextField label="Ngày đặt cọc" type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
           <TextField label="Ngày sử dụng dịch vụ" type="date" value={serviceUseDate} onChange={(e) => setServiceUseDate(e.target.value)} />
-          {shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate }) && (
-            <p className="sm:col-span-2 text-xs text-rose-600 font-medium flex items-center gap-1"><AlertCircle size={12} /> Đăng ký sớm hơn 1 ngày trước sử dụng dịch vụ (và trước ngày đặt cọc) — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
+          {shouldAutoCancelByDateRule({ ...order, depositDate }) && (
+            <p className="sm:col-span-2 text-xs text-rose-700 font-semibold flex items-center gap-1 bg-rose-50 rounded-lg px-2 py-1.5"><XCircle size={13} /> Ngày đăng ký sau ngày đặt cọc — bấm "Xác nhận thanh toán" sẽ tự động chuyển đơn "Không thành công" thay vì thanh toán.</p>
+          )}
+          {!shouldAutoCancelByDateRule({ ...order, depositDate }) && shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate }) && (
+            <p className="sm:col-span-2 text-xs text-rose-600 font-medium flex items-center gap-1"><AlertCircle size={12} /> Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
           )}
         </div>
       )}
