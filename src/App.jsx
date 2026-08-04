@@ -611,10 +611,10 @@ const ROLE_META = {
 const STATUS_META = {
   cho_phan_cong: { label: "Chờ xác nhận", color: "bg-slate-100 text-slate-600 border-slate-300" },
   cho_xu_ly: { label: "Chờ xác nhận", color: "bg-slate-100 text-slate-600 border-slate-300" },
-  dang_cham_soc: { label: "Chờ thanh toán", color: "bg-amber-50 text-amber-700 border-amber-300" },
-  cho_ke_toan: { label: "Chờ thanh toán", color: "bg-amber-50 text-amber-700 border-amber-300" },
+  dang_cham_soc: { label: "Xác nhận chăm sóc", color: "bg-amber-50 text-amber-700 border-amber-300" },
+  cho_ke_toan: { label: "Xác nhận chăm sóc", color: "bg-amber-50 text-amber-700 border-amber-300" },
   da_thanh_toan: { label: "Đơn hàng đã được ghi nhận", color: "bg-emerald-50 text-emerald-700 border-emerald-300" },
-  khong_thanh_toan: { label: "Không thanh toán", color: "bg-rose-50 text-rose-700 border-rose-300" },
+  khong_thanh_toan: { label: "Không thành công", color: "bg-rose-50 text-rose-700 border-rose-300" },
 };
 
 // Quy định riêng khối HTC: đơn hàng chờ thanh toán quá số ngày này sẽ tự động
@@ -654,7 +654,7 @@ const userById = (id) => USERS.find((u) => u.id === id);
 
 function mapEmployee(e) {
   return {
-    id: e.id, employeeCode: e.employee_code, name: e.name, role: e.role, store: e.store, position: e.position,
+    id: e.id, employeeCode: e.employee_code, name: e.name, role: e.role, store: e.store, position: e.position, phone: e.phone || "",
     mustChangePassword: !!e.must_change_password, passwordChangeDeadline: e.password_change_deadline || null,
   };
 }
@@ -667,16 +667,16 @@ function mapCustomer(c) {
 function mapOrder(o) {
   return {
     id: o.id, orderCode: o.order_code, customerId: o.customer_id,
-    customerName: o.customer_name, customerPhone: o.customer_phone, customerCode: o.customer_code,
+    customerName: o.customer_name, customerPhone: o.customer_phone, customerCode: o.customer_code, customerAddress: o.customer_address || "",
     company: o.company, store: o.store, storeAddress: o.store_address,
     product: o.product, quantity: o.quantity,
     totalAmount: Number(o.total_amount) || 0,
     discountAmount: Number(o.discount_amount) || 0,
     finalAmount: o.final_amount === null || o.final_amount === undefined ? undefined : Number(o.final_amount),
     commissionAmount: Number(o.commission_amount) || 0,
-    invoiceName: o.invoice_name || "", invoiceNumber: o.invoice_number || "",
+    invoiceName: o.invoice_name || "", invoiceNumber: o.invoice_number || "", transactionCode: o.transaction_code || "",
     expectedServiceDate: o.expected_service_date || "",
-    createdBy: o.created_by, createdByName: o.created_by_name,
+    createdBy: o.created_by, createdByName: o.created_by_name, createdByPhone: o.created_by_phone || "", createdByStore: o.created_by_store || "",
     assignedHandler: o.assigned_handler, assignedHandlerName: o.assigned_handler_name,
     status: o.status, handlerNote: o.handler_note, accountantNote: o.accountant_note,
     history: o.history || [], createdAt: o.created_at, updatedAt: o.updated_at,
@@ -688,12 +688,12 @@ function mapNotification(n) {
 
 function orderToRow(o) {
   return {
-    order_code: o.orderCode, customer_id: o.customerId, customer_name: o.customerName, customer_phone: o.customerPhone, customer_code: o.customerCode,
+    order_code: o.orderCode, customer_id: o.customerId, customer_name: o.customerName, customer_phone: o.customerPhone, customer_code: o.customerCode, customer_address: o.customerAddress || "",
     company: o.company, store: o.store, store_address: o.storeAddress, product: o.product,
     expected_service_date: o.expectedServiceDate || null,
     quantity: o.quantity ?? 0, total_amount: o.totalAmount ?? 0, discount_amount: o.discountAmount ?? 0,
     final_amount: o.finalAmount ?? null, commission_amount: o.commissionAmount ?? 0,
-    created_by: o.createdBy, created_by_name: o.createdByName,
+    created_by: o.createdBy, created_by_name: o.createdByName, created_by_phone: o.createdByPhone || "", created_by_store: o.createdByStore || "",
     assigned_handler: o.assignedHandler || null, assigned_handler_name: o.assignedHandlerName || null,
     status: o.status, handler_note: o.handlerNote || "", accountant_note: o.accountantNote || "",
     history: o.history || [], updated_at: new Date().toISOString(),
@@ -711,7 +711,7 @@ function mapAnnouncement(a) {
 
 async function fetchAll() {
   const [emp, cust, ord, notif, announ] = await Promise.all([
-    supabase.from("employees").select("id,employee_code,name,role,store,position,must_change_password,password_change_deadline"),
+    supabase.from("employees").select("id,employee_code,name,role,store,position,phone,must_change_password,password_change_deadline"),
     supabase.from("customers").select("*").order("created_at", { ascending: false }),
     supabase.from("orders").select("*").order("created_at", { ascending: false }),
     supabase.from("notifications").select("*").order("created_at", { ascending: false }),
@@ -1555,9 +1555,9 @@ export default function App() {
     const status = handler ? "cho_xu_ly" : "cho_phan_cong";
     const orderDraft = {
       orderCode: genOrderCode(orders),
-      customerId, customerName: cust?.name, customerPhone: cust?.phone, customerCode: cust?.customerCode,
+      customerId, customerName: cust?.name, customerPhone: cust?.phone, customerCode: cust?.customerCode, customerAddress: cust?.address || "",
       company, store, storeAddress, product, totalAmount: 0, expectedServiceDate: expectedServiceDate || null,
-      createdBy: currentUser.id, createdByName: currentUser.name,
+      createdBy: currentUser.id, createdByName: currentUser.name, createdByPhone: currentUser.employeeCode || "", createdByStore: currentUser.store || "",
       assignedHandler: handler?.id || null, assignedHandlerName: handler?.name || null,
       status, handlerNote: "", discountAmount: 0, commissionAmount: 0, accountantNote: "",
       history: [`${fmtDate(new Date().toISOString())} — ${currentUser.name} tạo đơn hàng`],
@@ -1625,7 +1625,7 @@ export default function App() {
   const forwardToAccounting = async (orderId, note, htcInfo) => {
     const order = orders.find((o) => o.id === orderId);
     const historyLine = htcInfo
-      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua). Số tiền: ${fmtMoney(htcInfo.amount)} · Chiết khấu: ${fmtMoney(htcInfo.discountAmount)} · Tên xuất HĐ: ${htcInfo.invoiceName} · Số HĐ: ${htcInfo.invoiceNumber}`
+      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua). Số tiền: ${fmtMoney(htcInfo.amount)} · Giảm giá: ${fmtMoney(htcInfo.discountAmount)} · Tên xuất HĐ: ${htcInfo.invoiceName} · Số HĐ: ${htcInfo.invoiceNumber}`
       : `${fmtDate(new Date().toISOString())} — ${currentUser.name} chuyển đơn cho kế toán (khách đồng ý mua)`;
     const newHistory = [...order.history, historyLine];
     const patch = { status: "cho_ke_toan", handler_note: note, history: newHistory, updated_at: new Date().toISOString() };
@@ -1657,7 +1657,7 @@ export default function App() {
     showToast("Đã cập nhật trạng thái đơn hàng");
   };
 
-  const confirmPayment = async (orderId, { amount, discountAmount, commissionAmount, quantity, note }) => {
+  const confirmPayment = async (orderId, { amount, discountAmount, commissionAmount, quantity, note, invoiceName, transactionCode }) => {
     const order = orders.find((o) => o.id === orderId);
     const totalAmount = Number(amount) || 0;
     const finalAmount = Math.max(totalAmount - Number(discountAmount || 0), 0);
@@ -1669,6 +1669,7 @@ export default function App() {
       status: "da_thanh_toan", total_amount: totalAmount, discount_amount: Number(discountAmount) || 0,
       final_amount: finalAmount, commission_amount: Number(commissionAmount) || 0, quantity: Number(quantity) || 1,
       accountant_note: note, history: newHistory, updated_at: new Date().toISOString(),
+      invoice_name: invoiceName || order.invoiceName || "", transaction_code: transactionCode || "",
     });
     await insertNotifications([
       notifRow(order.createdBy, `Đơn hàng của khách "${order.customerName}" đã được kế toán xác nhận thanh toán. Hoa hồng: ${fmtMoney(commissionAmount)}.`, orderId),
@@ -1679,13 +1680,13 @@ export default function App() {
 
   const rejectPayment = async (orderId, note) => {
     const order = orders.find((o) => o.id === orderId);
-    const newHistory = [...order.history, `${fmtDate(new Date().toISOString())} — ${currentUser.name} (kế toán) ghi nhận không thanh toán`];
+    const newHistory = [...order.history, `${fmtDate(new Date().toISOString())} — ${currentUser.name} (kế toán) ghi nhận không thành công`];
     await updateOrder(orderId, { status: "khong_thanh_toan", accountant_note: note, history: newHistory, updated_at: new Date().toISOString() });
     await insertNotifications([
-      notifRow(order.createdBy, `Đơn hàng của khách "${order.customerName}" không được thanh toán. Lý do: ${note || "(không có)"}`, orderId),
+      notifRow(order.createdBy, `Đơn hàng của khách "${order.customerName}" không thành công. Lý do: ${note || "(không có)"}`, orderId),
     ]);
     await refreshAll();
-    showToast("Đã cập nhật: không thanh toán");
+    showToast("Đã cập nhật: không thành công");
   };
 
   // Quét đơn hàng khối HTC đang "Chờ thanh toán" (cho_ke_toan) quá
@@ -2849,8 +2850,15 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
             <StatusBadge status={order.status} />
           </div>
           <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><Phone size={13} /> {order.customerPhone}</p>
+          {order.customerAddress && (
+            <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><MapPin size={13} /> {order.customerAddress}</p>
+          )}
           <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
-          <p className="text-xs text-slate-400 mt-1">Đại sứ phụ trách: {order.createdByName}</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Đại sứ phụ trách: {order.createdByName}
+            {order.createdByPhone && <> · <Phone size={11} className="inline -mt-0.5" /> {order.createdByPhone}</>}
+            {order.createdByStore && <> · {order.createdByStore}</>}
+          </p>
           {order.expectedServiceDate && (
             <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><Clock size={12} /> Dự kiến sử dụng dịch vụ: {fmtDate(order.expectedServiceDate)}</p>
           )}
@@ -2862,7 +2870,7 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
           <p className="text-xs font-medium text-slate-600 mb-2">Thông tin đơn hàng & hóa đơn (riêng khối HTC — điền trước khi chuyển kế toán)</p>
           <div className="grid sm:grid-cols-2 gap-3 mb-3">
             <MoneyField label="Số tiền đơn hàng (đ)" value={amount} onChange={setAmount} />
-            <MoneyField label="Chiết khấu (đ)" value={discount} onChange={setDiscount} />
+            <MoneyField label="Giảm giá (đ)" value={discount} onChange={setDiscount} />
             <TextField label="Tên khách hàng xuất hóa đơn" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn" />
             <TextField label="Số hóa đơn" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="VD: HD-000123" />
           </div>
@@ -2910,7 +2918,7 @@ const ORDER_GROUPS = [
   { key: "cho_xac_nhan", label: "Chờ xác nhận", statuses: ["cho_xu_ly"], badge: "bg-amber-50 text-amber-700 border-amber-300" },
   { key: "da_xac_nhan", label: "Đã xác nhận", statuses: ["dang_cham_soc", "cho_ke_toan"], badge: "bg-sky-50 text-sky-700 border-sky-300" },
   { key: "hoan_thanh", label: "Hoàn thành", statuses: ["da_thanh_toan"], badge: "bg-emerald-50 text-emerald-700 border-emerald-300" },
-  { key: "da_huy", label: "Đã hủy", statuses: ["khong_thanh_toan"], badge: "bg-rose-50 text-rose-700 border-rose-300" },
+  { key: "da_huy", label: "Đơn hàng không thành công", statuses: ["khong_thanh_toan"], badge: "bg-rose-50 text-rose-700 border-rose-300" },
 ];
 
 function OrderListCard({ order, group }) {
@@ -3072,7 +3080,11 @@ function AssignCard({ order, onAssign }) {
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
           <p className="font-medium text-slate-800">{order.customerName}</p>
-          <p className="text-sm text-slate-500 mt-1">{order.product} · Đại sứ: {order.createdByName}</p>
+          <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><Phone size={13} /> {order.customerPhone}</p>
+          {order.customerAddress && (
+            <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><MapPin size={13} /> {order.customerAddress}</p>
+          )}
+          <p className="text-sm text-slate-500 mt-1">{order.product} · Đại sứ: {order.createdByName}{order.createdByPhone ? ` (${order.createdByPhone})` : ""}</p>
           <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5"><Store size={12} /> {order.store}{order.company ? ` — ${order.company}` : ""}</p>
         </div>
         <StatusBadge status={order.status} />
@@ -3096,6 +3108,16 @@ function ChtPhanCong({ currentUser, orders, onAssign }) {
   const pending = orders
     .filter((o) => o.status === "cho_phan_cong")
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const assigned = orders
+    .filter((o) => o.status !== "cho_phan_cong")
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+  const [showAssigned, setShowAssigned] = useState(true);
+  const [q, setQ] = useState("");
+  const qLower = q.trim().toLowerCase();
+  const filteredAssigned = qLower
+    ? assigned.filter((o) => o.customerName?.toLowerCase().includes(qLower) || o.assignedHandlerName?.toLowerCase().includes(qLower))
+    : assigned;
+
   return (
     <div>
       <SectionTitle icon={ArrowRightLeft} title="Đơn hàng chờ phân công" subtitle="Tất cả khối công ty / chi nhánh" />
@@ -3105,6 +3127,40 @@ function ChtPhanCong({ currentUser, orders, onAssign }) {
         <div className="space-y-3">
           {pending.map((o) => <AssignCard key={o.id} order={o} onAssign={onAssign} />)}
         </div>
+      )}
+
+      <div className="flex items-center justify-between mt-8 mb-4">
+        <SectionTitle icon={ClipboardList} title="Đơn hàng đã phân công" subtitle={`${assigned.length} đơn — theo dõi tiến độ xử lý`} />
+        <GhostButton onClick={() => setShowAssigned((s) => !s)}>{showAssigned ? "Thu gọn" : "Xem"}</GhostButton>
+      </div>
+      {showAssigned && (
+        <>
+          <Card className="p-3 mb-4 flex items-center gap-2">
+            <Search size={15} className="text-slate-400 shrink-0" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm theo tên khách hàng hoặc nhân viên xử lý..." className="flex-1 text-sm outline-none" />
+          </Card>
+          {filteredAssigned.length === 0 ? (
+            <EmptyState icon={ClipboardList} text="Chưa có đơn hàng nào đã phân công." />
+          ) : (
+            <div className="space-y-2">
+              {filteredAssigned.map((o) => (
+                <Card key={o.id} className="p-3.5">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium text-slate-800">{o.customerName}</p>
+                        <StatusBadge status={o.status} />
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{o.product} · Nhân viên xử lý: {o.assignedHandlerName || "—"}</p>
+                      <p className="text-xs text-slate-400 mt-1">Đại sứ: {o.createdByName}{o.createdByPhone ? ` (${o.createdByPhone})` : ""} · <Store size={11} className="inline -mt-0.5" /> {o.store}</p>
+                    </div>
+                    <p className="text-xs text-slate-400 shrink-0">{fmtDate(o.updatedAt || o.createdAt)}</p>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -3265,7 +3321,7 @@ function InvoiceInfoStrip({ order }) {
       <span>Tên xuất HĐ: <span className="font-medium">{order.invoiceName || "—"}</span></span>
       <span>Số HĐ: <span className="font-medium">{order.invoiceNumber || "—"}</span></span>
       <span>Số tiền: <span className="font-medium">{fmtMoney(order.totalAmount)}</span></span>
-      <span>Chiết khấu: <span className="font-medium">{fmtMoney(order.discountAmount)}</span></span>
+      <span>Giảm giá: <span className="font-medium">{fmtMoney(order.discountAmount)}</span></span>
     </div>
   );
 }
@@ -3278,6 +3334,8 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
   const [commission, setCommission] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
+  const [invoiceName, setInvoiceName] = useState(order.invoiceName || "");
+  const [transactionCode, setTransactionCode] = useState(order.transactionCode || "");
   const finalAmount = Math.max((Number(amount) || 0) - Number(discount || 0), 0);
   const [amountError, setAmountError] = useState("");
 
@@ -3290,30 +3348,43 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
       return;
     }
     setAmountError("");
-    onConfirm(order.id, { amount, discountAmount: discount, commissionAmount: commission, quantity: needsQuantity ? quantity : 1, note });
+    onConfirm(order.id, {
+      amount, discountAmount: discount, commissionAmount: commission, quantity: needsQuantity ? quantity : 1, note,
+      invoiceName: invoiceName.trim(), transactionCode: transactionCode.trim(),
+    });
   };
 
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
-          <p className="font-medium text-slate-800">{order.customerName}</p>
+          <p className="font-medium text-slate-800">{order.customerName} {order.customerCode ? <span className="text-slate-400 font-normal">({order.customerCode})</span> : null}</p>
+          <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><Phone size={13} /> {order.customerPhone}</p>
+          {order.customerAddress && (
+            <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><MapPin size={13} /> {order.customerAddress}</p>
+          )}
           <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
-          <p className="text-xs text-slate-400 mt-1">Đại sứ: {order.createdByName} · Người chăm sóc: {order.assignedHandlerName}</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Đại sứ: {order.createdByName}{order.createdByPhone ? ` (${order.createdByPhone})` : ""} · Người chăm sóc: {order.assignedHandlerName}
+          </p>
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
         </div>
       </div>
       <InvoiceInfoStrip order={order} />
+      <div className="grid sm:grid-cols-2 gap-3 mb-3">
+        <TextField label="Tên KH xuất HĐ" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
+        <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
+      </div>
       <div className="grid sm:grid-cols-3 gap-3">
         <MoneyField label="Số tiền đơn hàng (đ)" value={amount} onChange={setAmount} />
-        <MoneyField label="Chiết khấu (đ)" value={discount} onChange={setDiscount} />
+        <MoneyField label="Giảm giá (đ)" value={discount} onChange={setDiscount} />
         <MoneyField label="Hoa hồng đại sứ (đ)" value={commission} onChange={setCommission} />
         {needsQuantity && (
           <TextField label={CATEGORY_LABELS[category]} type="number" min="0" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
         )}
       </div>
       <div className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2 mt-3">
-        <span className="text-sm text-slate-500">Thành tiền sau chiết khấu</span>
+        <span className="text-sm text-slate-500">Thành tiền sau giảm giá</span>
         <span className="text-sm font-semibold text-slate-800">{fmtMoney(finalAmount)}</span>
       </div>
       {amountError && (
@@ -3327,7 +3398,7 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
           <CheckCircle2 size={15} /> Xác nhận thanh toán
         </PrimaryButton>
         <DangerButton onClick={() => onReject(order.id, note)}>
-          <XCircle size={15} /> Không thanh toán
+          <XCircle size={15} /> Không thành công
         </DangerButton>
       </div>
     </Card>
@@ -3338,40 +3409,33 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
 function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
   const [vehicleType, setVehicleType] = useState("so_dien");
   const [quantity, setQuantity] = useState(1);
-  const [unitPrice, setUnitPrice] = useState("");
   const [discountPerUnit, setDiscountPerUnit] = useState(0);
   const [error, setError] = useState("");
 
   const qty = Number(quantity) || 0;
-  const price = Number(unitPrice) || 0;
   const discPerUnit = Number(discountPerUnit) || 0;
-  const totalAmount = qty * price;
   const totalDiscount = qty * discPerUnit;
   const rewardPerUnit = computeXeMayRewardPerUnit(vehicleType, discPerUnit);
   const totalCommission = qty * rewardPerUnit;
 
   const handleConfirm = () => {
-    if (qty <= 0 || price <= 0) { setError("Vui lòng nhập số lượng và giá hợp lệ."); return; }
+    if (qty <= 0) { setError("Vui lòng nhập số lượng hợp lệ."); return; }
     setError("");
-    onConfirm(order.id, { amount: totalAmount, discountAmount: totalDiscount, commissionAmount: totalCommission, quantity: qty, note });
+    onConfirm(order.id, { amount: 0, discountAmount: totalDiscount, commissionAmount: totalCommission, quantity: qty, note });
   };
 
   return (
     <>
+      <p className="text-xs text-slate-400 mb-2">Sản phẩm xe máy chỉ ghi nhận chỉ tiêu theo số lượng, không ghi nhận doanh số.</p>
       <div className="grid sm:grid-cols-2 gap-3">
         <SelectField label="Loại xe" value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
           <option value="so_dien">Xe số, xe điện (ngưỡng giảm giá 300.000đ/xe)</option>
           <option value="ga_con">Xe ga, xe côn (ngưỡng giảm giá 400.000đ/xe)</option>
         </SelectField>
         <TextField label="Số lượng xe" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <TextField label="Giá / xe (đ)" type="number" min="0" required value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
-        <TextField label="Chiết khấu / xe (đ)" type="number" min="0" value={discountPerUnit} onChange={(e) => setDiscountPerUnit(e.target.value)} />
+        <MoneyField label="Giảm giá / xe (đ)" value={discountPerUnit} onChange={setDiscountPerUnit} />
       </div>
-      <div className="grid sm:grid-cols-3 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-xl px-3 py-2">
-          <p className="text-xs text-slate-500">Tổng tiền hàng</p>
-          <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
-        </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Thưởng/xe (tự tính)</p>
           <p className="text-sm font-semibold text-slate-800">{fmtMoney(rewardPerUnit)}</p>
@@ -3387,7 +3451,7 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3397,37 +3461,30 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
 function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote }) {
   const [years, setYears] = useState(1);
   const [quantity, setQuantity] = useState(1);
-  const [unitPrice, setUnitPrice] = useState("");
   const [error, setError] = useState("");
 
   const qty = Number(quantity) || 0;
-  const price = Number(unitPrice) || 0;
-  const totalAmount = qty * price;
   const rewardPerUnit = baoHiemRewardPerUnit(Number(years));
   const totalCommission = qty * rewardPerUnit;
 
   const handleConfirm = () => {
-    if (qty <= 0 || price <= 0) { setError("Vui lòng nhập số lượng và giá hợp lệ."); return; }
+    if (qty <= 0) { setError("Vui lòng nhập số lượng hợp lệ."); return; }
     setError("");
-    onConfirm(order.id, { amount: totalAmount, discountAmount: 0, commissionAmount: totalCommission, quantity: qty, note });
+    onConfirm(order.id, { amount: 0, discountAmount: 0, commissionAmount: totalCommission, quantity: qty, note });
   };
 
   return (
     <>
-      <div className="grid sm:grid-cols-3 gap-3">
+      <p className="text-xs text-slate-400 mb-2">Sản phẩm bảo hiểm xe máy chỉ ghi nhận chỉ tiêu theo số lượng, không ghi nhận doanh số.</p>
+      <div className="grid sm:grid-cols-2 gap-3">
         <SelectField label="Thời hạn bảo hiểm" value={years} onChange={(e) => setYears(Number(e.target.value))}>
           <option value={1}>1 năm — thưởng 15.000đ/bảo hiểm</option>
           <option value={2}>2 năm — thưởng 20.000đ/bảo hiểm</option>
           <option value={3}>3 năm — thưởng 25.000đ/bảo hiểm</option>
         </SelectField>
         <TextField label="Số lượng bảo hiểm" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <TextField label="Giá / bảo hiểm (đ)" type="number" min="0" required value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
       </div>
-      <div className="grid sm:grid-cols-2 gap-2 mt-3">
-        <div className="bg-slate-50 rounded-xl px-3 py-2">
-          <p className="text-xs text-slate-500">Tổng tiền hàng</p>
-          <p className="text-sm font-semibold text-slate-800">{fmtMoney(totalAmount)}</p>
-        </div>
+      <div className="grid sm:grid-cols-1 gap-2 mt-3">
         <div className="bg-amber-50 rounded-xl px-3 py-2">
           <p className="text-xs text-amber-700">Tổng hoa hồng</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
@@ -3439,7 +3496,7 @@ function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3465,13 +3522,13 @@ function ServiceRevenueForm({ order, onConfirm, onReject, note, setNote, ratePer
   return (
     <>
       <div className="grid sm:grid-cols-2 gap-3">
-        <TextField label="Doanh thu (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+        <MoneyField label="Doanh thu (đ)" value={amount} onChange={setAmount} />
         <label className="flex items-center gap-2 mt-6">
           <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} className="w-4 h-4 accent-teal-800" />
           <span className="text-sm text-slate-700">Đơn hàng có giảm giá</span>
         </label>
         {hasDiscount && (
-          <TextField label="Số tiền giảm giá (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+          <MoneyField label="Số tiền giảm giá (đ)" value={discount} onChange={setDiscount} />
         )}
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
@@ -3489,7 +3546,7 @@ function ServiceRevenueForm({ order, onConfirm, onReject, note, setNote, ratePer
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3521,8 +3578,8 @@ function OTOMoiForm({ order, onConfirm, onReject, note, setNote }) {
     <>
       <div className="grid sm:grid-cols-3 gap-3">
         <TextField label="Số lượng xe" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <TextField label="Giá / xe (đ)" type="number" min="0" required value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
-        <TextField label="Giảm giá ngoài chính sách / xe (đ)" type="number" min="0" value={discountPerUnit} onChange={(e) => setDiscountPerUnit(e.target.value)} />
+        <MoneyField label="Giá / xe (đ)" value={unitPrice} onChange={setUnitPrice} />
+        <MoneyField label="Giảm giá ngoài chính sách / xe (đ)" value={discountPerUnit} onChange={setDiscountPerUnit} />
       </div>
       <div className="grid sm:grid-cols-3 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
@@ -3544,7 +3601,7 @@ function OTOMoiForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3572,14 +3629,14 @@ function BaoHiemOTOForm({ order, onConfirm, onReject, note, setNote }) {
   return (
     <>
       <div className="grid sm:grid-cols-2 gap-3">
-        <TextField label="Doanh thu bảo hiểm (đ)" type="number" min="0" required value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" />
+        <MoneyField label="Doanh thu bảo hiểm (đ)" value={amount} onChange={setAmount} />
         <TextField label="Mức chiết khấu theo chính sách THT (%)" type="number" min="0" step="0.1" value={policyRate} onChange={(e) => setPolicyRate(e.target.value)} placeholder="Do THT thông báo theo từng thời điểm" disabled={hasDiscount} />
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} className="w-4 h-4 accent-teal-800" />
           <span className="text-sm text-slate-700">Đơn hàng có giảm giá</span>
         </label>
         {hasDiscount && (
-          <TextField label="Số tiền giảm giá (đ)" type="number" min="0" value={discount} onChange={(e) => setDiscount(e.target.value)} />
+          <MoneyField label="Số tiền giảm giá (đ)" value={discount} onChange={setDiscount} />
         )}
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
@@ -3597,7 +3654,7 @@ function BaoHiemOTOForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3623,13 +3680,13 @@ function FlatRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercen
   return (
     <>
       {isHTCOrder && order.totalAmount > 0 && (
-        <p className="text-xs text-sky-700 mb-2">Doanh thu & chiết khấu đã tự điền theo thông tin CSKH gửi lên — kiểm tra lại và chỉnh sửa nếu cần.</p>
+        <p className="text-xs text-sky-700 mb-2">Doanh thu & giảm giá đã tự điền theo thông tin CSKH gửi lên — kiểm tra lại và chỉnh sửa nếu cần.</p>
       )}
       <div className="grid sm:grid-cols-3 gap-3">
         <MoneyField label="Doanh thu (đ)" value={amount} onChange={setAmount} />
-        <MoneyField label="Chiết khấu (đ)" value={discount} onChange={setDiscount} />
+        <MoneyField label="Giảm giá (đ)" value={discount} onChange={setDiscount} />
         <div className="bg-amber-50 rounded-xl px-3 py-2 flex flex-col justify-center">
-          <p className="text-xs text-amber-700">Hoa hồng ({ratePercent}% sau chiết khấu)</p>
+          <p className="text-xs text-amber-700">Hoa hồng ({ratePercent}% sau giảm giá)</p>
           <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
         </div>
       </div>
@@ -3639,7 +3696,7 @@ function FlatRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercen
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3672,7 +3729,7 @@ function VeMayBayForm({ order, onConfirm, onReject, note, setNote }) {
           <option value="doan">Khách đoàn thông thường — 10.000đ/vé</option>
         </SelectField>
         <TextField label="Số lượng vé" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <TextField label="Giá / vé (đ)" type="number" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
+        <MoneyField label="Giá / vé (đ)" value={unitPrice} onChange={setUnitPrice} />
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
@@ -3690,7 +3747,7 @@ function VeMayBayForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3717,7 +3774,7 @@ function TourForm({ order, onConfirm, onReject, note, setNote }) {
     <>
       <div className="grid sm:grid-cols-2 gap-3">
         <TextField label="Số lượng hợp đồng thành công" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <TextField label="Giá trị / hợp đồng (đ)" type="number" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0" />
+        <MoneyField label="Giá trị / hợp đồng (đ)" value={unitPrice} onChange={setUnitPrice} />
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
@@ -3735,7 +3792,7 @@ function TourForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thanh toán</DangerButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -3743,6 +3800,9 @@ function TourForm({ order, onConfirm, onReject, note, setNote }) {
 
 function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
   const [note, setNote] = useState("");
+  const [invoiceName, setInvoiceName] = useState(order.invoiceName || "");
+  const [transactionCode, setTransactionCode] = useState(order.transactionCode || "");
+  const wrappedConfirm = (orderId, extra) => onConfirm(orderId, { ...extra, invoiceName: invoiceName.trim(), transactionCode: transactionCode.trim() });
   const isOTO = OTO_SPECIAL_PRODUCTS.includes(order.product);
   const isHTC = HTC_SPECIAL_PRODUCTS.includes(order.product);
   const isVYC = VYC_SPECIAL_PRODUCTS.includes(order.product);
@@ -3752,14 +3812,24 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
-          <p className="font-medium text-slate-800">{order.customerName}</p>
+          <p className="font-medium text-slate-800">{order.customerName} {order.customerCode ? <span className="text-slate-400 font-normal">({order.customerCode})</span> : null}</p>
+          <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><Phone size={13} /> {order.customerPhone}</p>
+          {order.customerAddress && (
+            <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><MapPin size={13} /> {order.customerAddress}</p>
+          )}
           <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
-          <p className="text-xs text-slate-400 mt-1">Đại sứ: {order.createdByName} · Người chăm sóc: {order.assignedHandlerName}</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Đại sứ: {order.createdByName}{order.createdByPhone ? ` (${order.createdByPhone})` : ""} · Người chăm sóc: {order.assignedHandlerName}
+          </p>
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
         </div>
         <Badge className="bg-teal-50 text-teal-700 border-teal-200">Quy định thưởng Khối {groupLabel}</Badge>
       </div>
       <InvoiceInfoStrip order={order} />
+      <div className="grid sm:grid-cols-2 gap-3 mb-3">
+        <TextField label="Tên KH xuất HĐ" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
+        <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
+      </div>
       {isHTC && order.company === HTC_COMPANY_NAME && order.updatedAt && (() => {
         const daysElapsed = (Date.now() - new Date(order.updatedAt).getTime()) / 86400000;
         const daysLeft = Math.ceil(HTC_AUTO_CLOSE_DAYS - daysElapsed);
@@ -3773,24 +3843,24 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
           </p>
         );
       })()}
-      {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.PHU_TUNG && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
-      {order.product === P.SUA_CHUA_XE_MAY && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
-      {order.product === P.O_TO && <OTOMoiForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.PHU_KIEN_O_TO && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={9} />}
-      {order.product === P.BAO_HIEM_O_TO && <BaoHiemOTOForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.SUA_CHUA_O_TO && <ServiceRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.PHU_TUNG && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.SUA_CHUA_XE_MAY && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.O_TO && <OTOMoiForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.PHU_KIEN_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={9} />}
+      {order.product === P.BAO_HIEM_O_TO && <BaoHiemOTOForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.SUA_CHUA_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
       {(order.product === P.DAC_SAN || order.product === P.PHONG_NGHI || order.product === P.TIEC) && (
-        <FlatRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={3} />
+        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={3} />
       )}
-      {order.product === P.VE_MAY_BAY && <VeMayBayForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.TOUR && <TourForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.VE_MAY_BAY && <VeMayBayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.TOUR && <TourForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
       {VYC_SPECIAL_PRODUCTS.includes(order.product) && (
-        <FlatRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />
+        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />
       )}
       {VTNN_SPECIAL_PRODUCTS.includes(order.product) && (
-        <FlatRevenueForm order={order} onConfirm={onConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={2} />
+        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={2} />
       )}
     </Card>
   );
@@ -3853,7 +3923,7 @@ function KeToanLichSu({ currentUser, orders }) {
       "Đại sứ": o.createdByName,
       "Trạng thái": STATUS_META[o.status]?.label || o.status,
       "Số tiền đơn hàng": o.totalAmount || 0,
-      "Chiết khấu": o.discountAmount || 0,
+      "Giảm giá": o.discountAmount || 0,
       "Thành tiền": o.finalAmount ?? o.totalAmount ?? 0,
       "Hoa hồng đại sứ": o.commissionAmount || 0,
       "Ghi chú kế toán": o.accountantNote || "",
