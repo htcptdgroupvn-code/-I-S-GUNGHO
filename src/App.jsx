@@ -3552,7 +3552,7 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
 }
 
 // ---- Xe máy, xe đạp/máy điện: thưởng theo mức giảm giá/xe ----
-function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
+function XeMayForm({ order, onConfirm, onReject, note, setNote, zeroByDateRule }) {
   const [vehicleType, setVehicleType] = useState("so_dien");
   const [quantity, setQuantity] = useState(1);
   const [discountPerUnit, setDiscountPerUnit] = useState(0);
@@ -3563,7 +3563,7 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
   const discPerUnit = Number(discountPerUnit) || 0;
   const totalDiscount = isDoanhNghiep ? 0 : qty * discPerUnit;
   const rewardPerUnit = isDoanhNghiep ? computeXeMayRewardPerUnitDoanhNghiep(qty) : computeXeMayRewardPerUnit(vehicleType, discPerUnit);
-  const totalCommission = qty * rewardPerUnit;
+  const totalCommission = zeroByDateRule ? 0 : qty * rewardPerUnit;
 
   const handleConfirm = () => {
     if (qty <= 0) { setError("Vui lòng nhập số lượng hợp lệ."); return; }
@@ -3589,11 +3589,11 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Thưởng/xe (tự tính)</p>
-          <p className="text-sm font-semibold text-slate-800">{fmtMoney(rewardPerUnit)}</p>
+          <p className={`text-sm font-semibold ${zeroByDateRule ? "text-slate-400 line-through" : "text-slate-800"}`}>{fmtMoney(rewardPerUnit)}</p>
         </div>
-        <div className="bg-amber-50 rounded-xl px-3 py-2">
-          <p className="text-xs text-amber-700">Tổng hoa hồng</p>
-          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        <div className={`rounded-xl px-3 py-2 ${zeroByDateRule ? "bg-rose-50" : "bg-amber-50"}`}>
+          <p className={`text-xs ${zeroByDateRule ? "text-rose-700" : "text-amber-700"}`}>Tổng hoa hồng {zeroByDateRule ? "(bị huỷ theo quy tắc ngày)" : ""}</p>
+          <p className={`text-sm font-semibold ${zeroByDateRule ? "text-rose-800" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
         </div>
       </div>
       {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
@@ -3609,14 +3609,14 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
 }
 
 // ---- Bảo hiểm xe máy: thưởng theo thời hạn hợp đồng ----
-function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote }) {
+function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote, zeroByDateRule }) {
   const [years, setYears] = useState(1);
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState("");
 
   const qty = Number(quantity) || 0;
   const rewardPerUnit = baoHiemRewardPerUnit(Number(years));
-  const totalCommission = qty * rewardPerUnit;
+  const totalCommission = zeroByDateRule ? 0 : qty * rewardPerUnit;
 
   const handleConfirm = () => {
     if (qty <= 0) { setError("Vui lòng nhập số lượng hợp lệ."); return; }
@@ -3636,9 +3636,9 @@ function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote }) {
         <TextField label="Số lượng bảo hiểm" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
       </div>
       <div className="grid sm:grid-cols-1 gap-2 mt-3">
-        <div className="bg-amber-50 rounded-xl px-3 py-2">
-          <p className="text-xs text-amber-700">Tổng hoa hồng</p>
-          <p className="text-sm font-semibold text-amber-800">{fmtMoney(totalCommission)}</p>
+        <div className={`rounded-xl px-3 py-2 ${zeroByDateRule ? "bg-rose-50" : "bg-amber-50"}`}>
+          <p className={`text-xs ${zeroByDateRule ? "text-rose-700" : "text-amber-700"}`}>Tổng hoa hồng {zeroByDateRule ? "(bị huỷ theo quy tắc ngày)" : ""}</p>
+          <p className={`text-sm font-semibold ${zeroByDateRule ? "text-rose-800" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
         </div>
       </div>
       {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
@@ -3959,6 +3959,7 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
     ...extra, invoiceName: invoiceName.trim(), transactionCode: transactionCode.trim(),
     depositDate: depositDate || null, serviceUseDate: serviceUseDate || null,
   });
+  const zeroByDateRule = shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate });
   const isOTO = OTO_SPECIAL_PRODUCTS.includes(order.product);
   const isHTC = HTC_SPECIAL_PRODUCTS.includes(order.product);
   const isVYC = VYC_SPECIAL_PRODUCTS.includes(order.product);
@@ -4007,8 +4008,8 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
           </p>
         );
       })()}
-      {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
+      {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
+      {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.PHU_TUNG && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
       {order.product === P.SUA_CHUA_XE_MAY && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
       {order.product === P.O_TO && <OTOMoiForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
