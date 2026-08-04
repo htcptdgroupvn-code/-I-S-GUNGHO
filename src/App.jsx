@@ -323,6 +323,11 @@ function computeXeMayRewardPerUnit(vehicleType, discountPerUnit) {
   const threshold = vehicleType === "ga_con" ? 400000 : 300000; // xe ga/côn: 400k, xe số/điện: 300k
   return Number(discountPerUnit) <= threshold ? 200000 : 100000;
 }
+// Khách hàng Doanh nghiệp / Tổ chức: hoa hồng tính theo bậc số lượng, không
+// phụ thuộc mức giảm giá — SL <= 10: 100.000đ/xe; SL > 10: 50.000đ/xe.
+function computeXeMayRewardPerUnitDoanhNghiep(quantity) {
+  return Number(quantity) <= 10 ? 100000 : 50000;
+}
 // Bảo hiểm xe máy: thưởng theo thời hạn hợp đồng
 function baoHiemRewardPerUnit(years) {
   return years === 2 ? 20000 : years === 3 ? 25000 : 15000;
@@ -649,6 +654,9 @@ function genCustomerCode(existingCustomers, employeeCode) {
   return `${prefix}${String(count + 1).padStart(3, "0")}`;
 }
 const userById = (id) => USERS.find((u) => u.id === id);
+// Luôn ưu tiên SĐT hiện tại của Đại sứ (tra theo id) — nếu tài khoản đã bị xoá
+// hoặc chưa tìm thấy thì mới dùng tạm SĐT lưu sẵn trên đơn lúc tạo (dữ liệu cũ).
+const ambassadorPhone = (order) => userById(order.createdBy)?.phone || order.createdByPhone || "";
 
 // ---- Supabase data mapping (DB dùng snake_case, app dùng camelCase) ----
 
@@ -2930,7 +2938,7 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
           <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
           <p className="text-xs text-slate-400 mt-1">
             Đại sứ phụ trách: {order.createdByName}
-            {order.createdByPhone && <> · <Phone size={11} className="inline -mt-0.5" /> {order.createdByPhone}</>}
+            {ambassadorPhone(order) && <> · <Phone size={11} className="inline -mt-0.5" /> {ambassadorPhone(order)}</>}
             {order.createdByStore && <> · {order.createdByStore}</>}
           </p>
           {order.expectedServiceDate && (
@@ -3158,7 +3166,7 @@ function AssignCard({ order, onAssign }) {
           {order.customerAddress && (
             <p className="text-sm text-slate-500 mt-1 flex items-center gap-1.5"><MapPin size={13} /> {order.customerAddress}</p>
           )}
-          <p className="text-sm text-slate-500 mt-1">{order.product} · Đại sứ: {order.createdByName}{order.createdByPhone ? ` (${order.createdByPhone})` : ""}</p>
+          <p className="text-sm text-slate-500 mt-1">{order.product} · Đại sứ: {order.createdByName}{ambassadorPhone(order) ? ` (${ambassadorPhone(order)})` : ""}</p>
           <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5"><Store size={12} /> {order.store}{order.company ? ` — ${order.company}` : ""}</p>
         </div>
         <StatusBadge status={order.status} />
@@ -3439,7 +3447,7 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
           )}
           <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
           <p className="text-xs text-slate-400 mt-1">
-            Đại sứ: {order.createdByName}{order.createdByPhone ? ` (${order.createdByPhone})` : ""} · Người chăm sóc: {order.assignedHandlerName}
+            Đại sứ: {order.createdByName}{ambassadorPhone(order) ? ` (${ambassadorPhone(order)})` : ""} · Người chăm sóc: {order.assignedHandlerName}
           </p>
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
         </div>
@@ -3486,10 +3494,11 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
   const [discountPerUnit, setDiscountPerUnit] = useState(0);
   const [error, setError] = useState("");
 
+  const isDoanhNghiep = vehicleType === "doanh_nghiep";
   const qty = Number(quantity) || 0;
   const discPerUnit = Number(discountPerUnit) || 0;
-  const totalDiscount = qty * discPerUnit;
-  const rewardPerUnit = computeXeMayRewardPerUnit(vehicleType, discPerUnit);
+  const totalDiscount = isDoanhNghiep ? 0 : qty * discPerUnit;
+  const rewardPerUnit = isDoanhNghiep ? computeXeMayRewardPerUnitDoanhNghiep(qty) : computeXeMayRewardPerUnit(vehicleType, discPerUnit);
   const totalCommission = qty * rewardPerUnit;
 
   const handleConfirm = () => {
@@ -3505,10 +3514,14 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote }) {
         <SelectField label="Loại xe" value={vehicleType} onChange={(e) => setVehicleType(e.target.value)}>
           <option value="so_dien">Xe số, xe điện (ngưỡng giảm giá 300.000đ/xe)</option>
           <option value="ga_con">Xe ga, xe côn (ngưỡng giảm giá 400.000đ/xe)</option>
+          <option value="doanh_nghiep">Khách hàng Doanh nghiệp / Tổ chức (theo bậc số lượng)</option>
         </SelectField>
         <TextField label="Số lượng xe" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-        <MoneyField label="Giảm giá / xe (đ)" value={discountPerUnit} onChange={setDiscountPerUnit} />
+        {!isDoanhNghiep && <MoneyField label="Giảm giá / xe (đ)" value={discountPerUnit} onChange={setDiscountPerUnit} />}
       </div>
+      {isDoanhNghiep && (
+        <p className="text-xs text-slate-400 mt-2">Khách Doanh nghiệp/Tổ chức: số lượng ≤ 10 xe → 100.000đ/xe; số lượng &gt; 10 xe → 50.000đ/xe (không tính theo giảm giá).</p>
+      )}
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Thưởng/xe (tự tính)</p>
@@ -3893,7 +3906,7 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
           )}
           <p className="text-sm text-slate-500 mt-1">{order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}</p>
           <p className="text-xs text-slate-400 mt-1">
-            Đại sứ: {order.createdByName}{order.createdByPhone ? ` (${order.createdByPhone})` : ""} · Người chăm sóc: {order.assignedHandlerName}
+            Đại sứ: {order.createdByName}{ambassadorPhone(order) ? ` (${ambassadorPhone(order)})` : ""} · Người chăm sóc: {order.assignedHandlerName}
           </p>
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú CSKH: {order.handlerNote}</p>}
         </div>
