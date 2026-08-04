@@ -2940,7 +2940,9 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
   const [serviceUseDate, setServiceUseDate] = useState(order.serviceUseDate || order.expectedServiceDate || "");
   const [invoiceError, setInvoiceError] = useState("");
 
+  const isTM1Order = order.company === TM1_COMPANY_NAME;
   const handleForward = () => {
+    const dateFields = isTM1Order ? { depositDate: depositDate || null, serviceUseDate: serviceUseDate || null } : {};
     if (isHTCOrder) {
       if (!amount || Number(amount) <= 0 || !invoiceName.trim() || !invoiceNumber.trim()) {
         setInvoiceError("Vui lòng điền đủ Số tiền đơn hàng, Tên khách hàng xuất hóa đơn và Số hóa đơn trước khi chuyển kế toán.");
@@ -2950,10 +2952,10 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
       onForward(order.id, note, {
         amount: Number(amount) || 0, discountAmount: Number(discount) || 0,
         invoiceName: invoiceName.trim(), invoiceNumber: invoiceNumber.trim(),
-        depositDate: depositDate || null, serviceUseDate: serviceUseDate || null,
+        ...dateFields,
       });
     } else {
-      onForward(order.id, note, { depositDate: depositDate || null, serviceUseDate: serviceUseDate || null });
+      onForward(order.id, note, dateFields);
     }
   };
 
