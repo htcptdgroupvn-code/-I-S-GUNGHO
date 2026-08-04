@@ -5,7 +5,7 @@ import {
   Users, ClipboardList, BarChart3, Bell, LogOut, CheckCircle2, XCircle,
   Send, UserPlus, ShoppingBag, TrendingUp, Award, Store, Wallet,
   ArrowRightLeft, RefreshCw, Phone, MapPin, Plus, ChevronRight, Inbox,
-  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search, Megaphone, Pin, Pencil, Trash2, Lock, ShieldCheck
+  ClipboardCheck, Building2, Landmark, AlertCircle, X, Clock, Download, FileText, Search, Megaphone, Pin, Pencil, Trash2, Lock, ShieldCheck, User
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -1215,6 +1215,66 @@ function ForcePasswordChangeGate({ currentUser, onChanged, onLogout }) {
 }
 
 // ---------------------------------------------------------------------------
+// Bắt buộc cập nhật thông tin liên hệ (SĐT, Họ tên, Store) khi tài khoản chưa
+// có SĐT — mọi tài khoản phải điền đủ trước khi vào dùng app.
+// ---------------------------------------------------------------------------
+function ProfileCompletionGate({ currentUser, onDone, onLogout }) {
+  const [phone, setPhone] = useState(currentUser.phone || "");
+  const [name, setName] = useState(currentUser.name || "");
+  const [store, setStore] = useState(currentUser.store || "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!phone.trim() || !name.trim() || !store.trim()) {
+      setError("Vui lòng điền đủ Số điện thoại, Họ tên đầy đủ và Store làm việc.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const { error: qErr } = await supabase.rpc("update_own_profile", {
+        p_employee_id: currentUser.id, p_phone: phone.trim(), p_name: name.trim(), p_store: store.trim(),
+      });
+      if (qErr) throw qErr;
+      onDone({ phone: phone.trim(), name: name.trim(), store: store.trim() });
+    } catch (err) {
+      console.error(err);
+      setError("Không lưu được thông tin, vui lòng thử lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-teal-50 via-slate-50 to-slate-50 px-4 py-10">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-teal-700 to-teal-900 mx-auto mb-3 flex items-center justify-center shadow-lg shadow-teal-900/25">
+            <User size={26} className="text-white" />
+          </div>
+          <h1 className="text-xl font-semibold text-slate-800">Cập nhật thông tin liên hệ</h1>
+          <p className="text-sm text-slate-500 mt-1">Vui lòng điền đủ thông tin bên dưới trước khi tiếp tục sử dụng app. Thông tin này sẽ hiển thị trên đơn hàng để các bộ phận khác liên hệ khi cần.</p>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xl shadow-slate-900/5 p-5 space-y-3">
+          <TextField label="Số điện thoại liên hệ" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="09xxxxxxxx" />
+          <TextField label="Họ tên đầy đủ" value={name} onChange={(e) => setName(e.target.value)} />
+          <SelectField label="Store / chi nhánh làm việc" value={store} onChange={(e) => setStore(e.target.value)}>
+            <option value="">— Chọn store —</option>
+            {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name} — {b.company}</option>)}
+          </SelectField>
+          {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
+          <PrimaryButton onClick={submit} disabled={saving} className="w-full justify-center">
+            {saving ? "Đang lưu..." : "Lưu và tiếp tục"}
+          </PrimaryButton>
+          <GhostButton onClick={onLogout} className="w-full justify-center">Đăng xuất</GhostButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Quản lý tài khoản (Admin) — tra cứu + đặt lại mật khẩu cho nhân sự
 // ---------------------------------------------------------------------------
 function ResetPasswordModal({ currentUser, employee, onClose, onSuccess }) {
@@ -1557,7 +1617,7 @@ export default function App() {
       orderCode: genOrderCode(orders),
       customerId, customerName: cust?.name, customerPhone: cust?.phone, customerCode: cust?.customerCode, customerAddress: cust?.address || "",
       company, store, storeAddress, product, totalAmount: 0, expectedServiceDate: expectedServiceDate || null,
-      createdBy: currentUser.id, createdByName: currentUser.name, createdByPhone: currentUser.employeeCode || "", createdByStore: currentUser.store || "",
+      createdBy: currentUser.id, createdByName: currentUser.name, createdByPhone: currentUser.phone || "", createdByStore: currentUser.store || "",
       assignedHandler: handler?.id || null, assignedHandlerName: handler?.name || null,
       status, handlerNote: "", discountAmount: 0, commissionAmount: 0, accountantNote: "",
       history: [`${fmtDate(new Date().toISOString())} — ${currentUser.name} tạo đơn hàng`],
@@ -1749,6 +1809,20 @@ export default function App() {
         onChanged={() => {
           setCurrentUser((prev) => prev && { ...prev, mustChangePassword: false, passwordChangeDeadline: null });
           showToast("Đã đổi mật khẩu thành công");
+        }}
+      />
+    );
+  }
+
+  if (!currentUser.phone) {
+    return (
+      <ProfileCompletionGate
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onDone={(updated) => {
+          setCurrentUser((prev) => prev && { ...prev, ...updated });
+          refreshAll();
+          showToast("Đã lưu thông tin liên hệ");
         }}
       />
     );
