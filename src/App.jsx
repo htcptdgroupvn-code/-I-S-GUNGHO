@@ -1681,8 +1681,11 @@ export default function App() {
 
   const createOrder = async ({ customerId, company, store, storeAddress, product, handlerId, expectedServiceDate }) => {
     const cust = customers.find((c) => c.id === customerId);
-    const handler = handlerId ? userById(handlerId) : null;
-    const status = handler ? "cho_xu_ly" : "cho_phan_cong";
+    // Khối TM1 - sản phẩm Bảo hiểm xe máy: chuyển thẳng đến Kế toán bảo hiểm của
+    // Store tương ứng ngay khi tạo đơn, bỏ qua hoàn toàn bước CHT phân công / CSKH.
+    const isTM1DirectInsurance = company === TM1_COMPANY_NAME && product === P.BAO_HIEM_XE_MAY;
+    const handler = !isTM1DirectInsurance && handlerId ? userById(handlerId) : null;
+    const status = isTM1DirectInsurance ? "cho_ke_toan" : (handler ? "cho_xu_ly" : "cho_phan_cong");
     const orderDraft = {
       orderCode: genOrderCode(orders),
       customerId, customerName: cust?.name, customerPhone: cust?.phone, customerCode: cust?.customerCode, customerAddress: cust?.address || "",
@@ -1690,7 +1693,12 @@ export default function App() {
       createdBy: currentUser.id, createdByName: currentUser.name, createdByPhone: currentUser.phone || "", createdByStore: currentUser.store || "",
       assignedHandler: handler?.id || null, assignedHandlerName: handler?.name || null,
       status, handlerNote: "", discountAmount: 0, commissionAmount: 0, accountantNote: "",
-      history: [`${fmtDate(new Date().toISOString())} — ${currentUser.name} tạo đơn hàng`],
+      history: [
+        `${fmtDate(new Date().toISOString())} — ${currentUser.name} tạo đơn hàng`,
+        ...(isTM1DirectInsurance
+          ? [`${fmtDate(new Date().toISOString())} — Hệ thống tự động chuyển thẳng đơn bảo hiểm xe máy (TM1) đến Kế toán bảo hiểm, bỏ qua bước CSKH`]
+          : []),
+      ],
     };
     const { data, error } = await supabase.from("orders").insert(orderToRow(orderDraft)).select().single();
     if (error) {
@@ -1702,7 +1710,17 @@ export default function App() {
     setOrders((prev) => [order, ...prev]);
 
     let notifRows = [];
-    if (handler) {
+    if (isTM1DirectInsurance) {
+      // Ưu tiên đúng Kế toán bảo hiểm của Store; nếu Store chưa có tài khoản
+      // chuyên trách thì rơi về Kế toán thường của Store; cuối cùng mới rơi về
+      // toàn bộ nhóm kế toán (giống quy tắc fallback đang dùng ở forwardToAccounting).
+      const specialtyAccountants = USERS.filter((u) => u.role === "ke_toan_bao_hiem" && u.store === store);
+      const storeAccountants = specialtyAccountants.length > 0 ? specialtyAccountants : USERS.filter((u) => u.role === "ke_toan" && u.store === store);
+      const targets = storeAccountants.length > 0 ? storeAccountants : USERS.filter((u) => KE_TOAN_ROLES.includes(u.role));
+      targets.forEach((kt) => {
+        notifRows.push(notifRow(kt.id, `Có đơn hàng bảo hiểm xe máy mới (TM1) cần xác nhận thanh toán (khách "${cust?.name}").`, order.id));
+      });
+    } else if (handler) {
       notifRows.push(notifRow(handler.id, `Bạn được giao chăm sóc đơn hàng của khách "${cust?.name}" (${product}).`, order.id));
     } else {
       const storeManagers = USERS.filter((u) => u.role === "cht" && u.store === store);
@@ -1713,7 +1731,7 @@ export default function App() {
     }
     await insertNotifications(notifRows);
     await refreshAll();
-    showToast("Đã tạo đơn hàng");
+    showToast(isTM1DirectInsurance ? "Đã tạo đơn hàng — chuyển thẳng Kế toán bảo hiểm" : "Đã tạo đơn hàng");
   };
 
   const updateOrder = async (orderId, patch) => {
@@ -2579,6 +2597,8 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const selectedBranch = branchInfo(form.store);
   const storeHandlers = USERS.filter((u) => u.role === "xu_ly" && u.store === form.store);
   const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === "xu_ly");
+  // Khối TM1 - Bảo hiểm xe máy: đơn chuyển thẳng Kế toán bảo hiểm, không qua CSKH
+  const isTM1DirectInsurance = form.company === TM1_COMPANY_NAME && form.product === P.BAO_HIEM_XE_MAY;
 
   const submit = async () => {
     if (!form.customerId || !form.product.trim()) {
@@ -2669,10 +2689,16 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
                 <option value="__custom__">Khác (nhập tay)...</option>
               </SelectField>
             )}
-            <SelectField label="Người chăm sóc (tùy chọn)" value={form.handlerId} onChange={(e) => setForm({ ...form, handlerId: e.target.value })}>
-              <option value="">— Không chọn, gửi về trưởng đơn vị —</option>
-              {handlers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-            </SelectField>
+            {isTM1DirectInsurance ? (
+              <div className="sm:col-span-2 flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2">
+                <ShieldCheck size={15} /> Đơn Bảo hiểm xe máy (TM1) sẽ tự động chuyển thẳng đến Kế toán bảo hiểm của "{form.store || "chi nhánh"}", không qua CSKH.
+              </div>
+            ) : (
+              <SelectField label="Người chăm sóc (tùy chọn)" value={form.handlerId} onChange={(e) => setForm({ ...form, handlerId: e.target.value })}>
+                <option value="">— Không chọn, gửi về trưởng đơn vị —</option>
+                {handlers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              </SelectField>
+            )}
             <TextField
               label="Thời gian dự kiến sử dụng dịch vụ"
               type="date"
