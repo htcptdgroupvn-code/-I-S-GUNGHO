@@ -839,7 +839,7 @@ class TabErrorBoundary extends React.Component {
 
 function Badge({ children, className = "" }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${className}`}>
+    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap ${className}`}>
       {children}
     </span>
   );
@@ -851,17 +851,17 @@ function StatusBadge({ status }) {
 }
 
 function Card({ children, className = "" }) {
-  return <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow duration-200 ${className}`}>{children}</div>;
+  return <div className={`bg-white/90 backdrop-blur rounded-3xl border border-white shadow-sm shadow-sky-900/5 hover:shadow-md transition-shadow duration-200 ${className}`}>{children}</div>;
 }
 
 function SectionTitle({ icon: Icon, title, subtitle }) {
   return (
     <div className="flex items-start gap-3 mb-4">
-      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center shrink-0 shadow-sm shadow-teal-900/20">
-        <Icon size={19} />
+      <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shrink-0 shadow-sm shadow-sky-900/10 text-sky-700">
+        <Icon size={20} />
       </div>
       <div>
-        <h2 className="text-lg font-semibold text-slate-800 tracking-tight">{title}</h2>
+        <h2 className="text-xl font-bold text-slate-800 tracking-tight">{title}</h2>
         {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
       </div>
     </div>
@@ -881,22 +881,20 @@ function EmptyState({ icon: Icon, text }) {
 
 function MetricCard({ label, value, icon: Icon, accent = "teal" }) {
   const accents = {
-    teal: { text: "text-teal-700", bg: "bg-teal-50", ring: "ring-teal-600/10", bar: "bg-teal-600" },
-    amber: { text: "text-amber-700", bg: "bg-amber-50", ring: "ring-amber-600/10", bar: "bg-amber-600" },
-    indigo: { text: "text-indigo-700", bg: "bg-indigo-50", ring: "ring-indigo-600/10", bar: "bg-indigo-600" },
-    rose: { text: "text-rose-700", bg: "bg-rose-50", ring: "ring-rose-600/10", bar: "bg-rose-600" },
+    teal: { text: "text-teal-600", bg: "bg-teal-50" },
+    amber: { text: "text-amber-500", bg: "bg-amber-50" },
+    indigo: { text: "text-indigo-500", bg: "bg-indigo-50" },
+    rose: { text: "text-rose-500", bg: "bg-rose-50" },
   };
   const a = accents[accent] || accents.teal;
   return (
-    <div className="relative bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow duration-200 p-4 flex items-center gap-3 overflow-hidden">
-      <span className={`absolute left-0 top-0 bottom-0 w-1 ${a.bar}`} />
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ring-4 ${a.bg} ${a.text} ${a.ring}`}>
-        <Icon size={19} />
+    <div className="relative bg-white/90 backdrop-blur rounded-3xl border border-white shadow-sm shadow-sky-900/5 hover:shadow-md transition-shadow duration-200 p-5 overflow-hidden">
+      <div className={`absolute -right-3 -bottom-3 w-20 h-20 rounded-full ${a.bg} opacity-70`} />
+      <div className="relative">
+        <p className="text-sm text-slate-500">{label}</p>
+        <p className="text-2xl font-bold text-slate-800 truncate tracking-tight mt-1">{value}</p>
       </div>
-      <div className="min-w-0">
-        <p className="text-xs text-slate-500 truncate">{label}</p>
-        <p className="text-lg font-semibold text-slate-800 truncate tracking-tight">{value}</p>
-      </div>
+      <div className={`absolute right-4 top-4 ${a.text}`}><Icon size={22} /></div>
     </div>
   );
 }
@@ -1028,7 +1026,7 @@ function PrimaryButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-b from-teal-700 to-teal-800 text-white text-sm font-medium shadow-sm shadow-teal-900/20 hover:from-teal-800 hover:to-teal-900 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+      className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-gradient-to-b from-sky-500 to-sky-600 text-white text-sm font-semibold shadow-sm shadow-sky-900/20 hover:from-sky-600 hover:to-sky-700 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
     >
       {children}
     </button>
@@ -2017,18 +2015,18 @@ export default function App() {
   const navGroups = NAV_GROUPS[currentUser.role];
 
   return (
-    <div className="min-h-[600px] bg-slate-50">
+    <div className="min-h-[600px] bg-gradient-to-b from-sky-100 via-sky-50 to-white">
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <UrgentAnnouncementModal currentUser={currentUser} announcements={announcements} />
       {/* top bar */}
-      <div className="bg-white/90 backdrop-blur border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="bg-white/70 backdrop-blur border-b border-white sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center shrink-0 shadow-sm shadow-teal-900/25">
+            <div className="w-9 h-9 rounded-2xl bg-white flex items-center justify-center shrink-0 shadow-sm shadow-sky-900/10 text-sky-700">
               <TrendingUp size={18} />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
+              <p className="text-sm font-bold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
               <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
             </div>
           </div>
@@ -2039,7 +2037,7 @@ export default function App() {
             </GhostButton>
             <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} />
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-sm">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-sky-600 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-sm">
                 {currentUser.name.split(" ").slice(-1)[0][0]}
               </div>
               <div className="hidden md:block text-right leading-tight">
@@ -2065,10 +2063,10 @@ export default function App() {
                   <button
                     key={n.key}
                     onClick={() => setTab(n.key)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition ${
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
                       tab === n.key
-                        ? "bg-teal-800 text-white shadow-sm shadow-teal-900/20"
-                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                        ? "bg-gradient-to-b from-sky-500 to-sky-600 text-white shadow-sm shadow-sky-900/20"
+                        : "text-slate-500 hover:bg-white/70 hover:text-slate-700"
                     }`}
                   >
                     <n.icon size={15} /> {n.label}
@@ -2736,15 +2734,17 @@ function OrderRow({ order, showCommission, right }) {
   const isPaid = order.status === "da_thanh_toan";
   return (
     <Card className="p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-medium text-slate-800">{order.customerName}</p>
+      <div className="flex items-start gap-3">
+        <div className="w-11 h-11 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+          <Store size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-xs text-slate-400 truncate">{order.store}</p>
             <StatusBadge status={order.status} />
           </div>
-          <p className="text-sm text-slate-500 mt-1">
-            {order.product} · <Store size={12} className="inline -mt-0.5" /> {order.store}
-          </p>
+          <p className="font-semibold text-slate-800 mt-0.5">{order.customerName}</p>
+          <p className="text-sm text-slate-500 mt-0.5">{order.product}</p>
           {order.assignedHandlerName && (
             <p className="text-xs text-slate-400 mt-1">Người chăm sóc: {order.assignedHandlerName}</p>
           )}
@@ -2754,22 +2754,24 @@ function OrderRow({ order, showCommission, right }) {
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú: {order.handlerNote}</p>}
           {order.insuranceDocUrl && (
             <div className="flex items-center gap-3 mt-1.5">
-              <a href={order.insuranceDocUrl} target="_blank" rel="noreferrer" className="text-xs text-teal-700 hover:underline flex items-center gap-1">
+              <a href={order.insuranceDocUrl} target="_blank" rel="noreferrer" className="text-xs text-sky-700 hover:underline flex items-center gap-1">
                 <FileText size={12} /> Ảnh {INSURANCE_DOC_TYPE_LABELS[order.insuranceDocType] || "giấy tờ"}
               </a>
             </div>
           )}
-        </div>
-        <div className="text-right shrink-0">
-          {isPaid ? (
-            <p className="font-semibold text-slate-800">{fmtMoney(order.finalAmount ?? order.totalAmount)}</p>
-          ) : (
-            <p className="text-xs text-slate-400">Chưa xác định số tiền</p>
-          )}
-          {showCommission && isPaid && (
-            <p className="text-xs text-amber-700 font-medium mt-1">+ {fmtMoney(order.commissionAmount)} hoa hồng</p>
-          )}
-          {right}
+          <div className="flex items-end justify-between gap-3 mt-2.5 pt-2.5 border-t border-slate-100">
+            <div>
+              {isPaid ? (
+                <p className="font-semibold text-slate-800">{fmtMoney(order.finalAmount ?? order.totalAmount)}</p>
+              ) : (
+                <p className="text-xs text-slate-400">Chưa xác định số tiền</p>
+              )}
+              {showCommission && isPaid && (
+                <p className="text-xs text-amber-600 font-medium mt-0.5">+ {fmtMoney(order.commissionAmount)} hoa hồng</p>
+              )}
+            </div>
+            {right}
+          </div>
         </div>
       </div>
     </Card>
@@ -2959,8 +2961,15 @@ function DaiSuBaoCao({ currentUser, orders }) {
     exportGungHoNhanVienTemplate({ ambassador: currentUser, orders, fromDate, toDate });
   };
 
+  const hour = new Date().getHours();
+  const greeting = hour < 11 ? "Chào buổi sáng" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
+
   return (
     <div className="space-y-5">
+      <div className="rounded-3xl bg-gradient-to-br from-sky-100 to-sky-50 border border-white p-5">
+        <p className="text-lg font-bold text-sky-800">{greeting}, {currentUser.name.split(" ").slice(-1)[0]}!</p>
+        <p className="text-sm text-sky-700/80 mt-1">Đây là tổng quan doanh thu, hoa hồng và xếp hạng của bạn.</p>
+      </div>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <SectionTitle
           icon={BarChart3}
