@@ -742,6 +742,7 @@ function mapOrder(o) {
     invoiceName: o.invoice_name || "", invoiceNumber: o.invoice_number || "", transactionCode: o.transaction_code || "",
     expectedServiceDate: o.expected_service_date || "",
     depositDate: o.deposit_date || "", serviceUseDate: o.service_use_date || "",
+    insuranceDocType: o.insurance_doc_type || "", insuranceDocUrl: o.insurance_doc_url || "",
     createdBy: o.created_by, createdByName: o.created_by_name, createdByPhone: o.created_by_phone || "", createdByStore: o.created_by_store || "",
     assignedHandler: o.assigned_handler, assignedHandlerName: o.assigned_handler_name,
     status: o.status, handlerNote: o.handler_note, accountantNote: o.accountant_note,
@@ -1812,7 +1813,7 @@ export default function App() {
     showToast("Đã cập nhật trạng thái đơn hàng");
   };
 
-  const confirmPayment = async (orderId, { amount, discountAmount, commissionAmount, quantity, note, invoiceName, transactionCode, depositDate, serviceUseDate }) => {
+  const confirmPayment = async (orderId, { amount, discountAmount, commissionAmount, quantity, note, invoiceName, transactionCode, depositDate, serviceUseDate, insuranceDocType, insuranceDocUrl }) => {
     const order = orders.find((o) => o.id === orderId);
     const effectiveDepositDate = depositDate !== undefined ? depositDate : order.depositDate;
     const effectiveServiceUseDate = serviceUseDate !== undefined ? serviceUseDate : order.serviceUseDate;
@@ -1851,6 +1852,8 @@ export default function App() {
     if (order.company === TM1_COMPANY_NAME) {
       if (depositDate !== undefined) patch.deposit_date = depositDate;
       if (serviceUseDate !== undefined) patch.service_use_date = serviceUseDate;
+      if (insuranceDocType !== undefined) patch.insurance_doc_type = insuranceDocType;
+      if (insuranceDocUrl !== undefined) patch.insurance_doc_url = insuranceDocUrl;
     }
     await updateOrder(orderId, patch);
     await insertNotifications([
@@ -2749,6 +2752,13 @@ function OrderRow({ order, showCommission, right }) {
             <p className="text-xs text-slate-500 mt-1 flex items-center gap-1"><Clock size={12} /> Dự kiến sử dụng dịch vụ: {fmtDate(order.expectedServiceDate)}</p>
           )}
           {order.handlerNote && <p className="text-xs text-slate-500 mt-1 italic">Ghi chú: {order.handlerNote}</p>}
+          {order.insuranceDocUrl && (
+            <div className="flex items-center gap-3 mt-1.5">
+              <a href={order.insuranceDocUrl} target="_blank" rel="noreferrer" className="text-xs text-teal-700 hover:underline flex items-center gap-1">
+                <FileText size={12} /> Ảnh {INSURANCE_DOC_TYPE_LABELS[order.insuranceDocType] || "giấy tờ"}
+              </a>
+            </div>
+          )}
         </div>
         <div className="text-right shrink-0">
           {isPaid ? (
@@ -4070,15 +4080,76 @@ function TourForm({ order, onConfirm, onReject, note, setNote }) {
   );
 }
 
+// Bucket lưu ảnh chứng từ đơn hàng (tạo bucket "order-images", để public đọc) trên Supabase Storage
+const ORDER_IMAGES_BUCKET = "order-images";
+const INSURANCE_DOC_TYPE_LABELS = { dang_ky_xe: "Đăng ký xe", bao_hiem_cu: "Bảo hiểm cũ" };
+
+async function uploadOrderDocImage(orderId, kind, file) {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const path = `${orderId}/${kind}_${Date.now()}.${ext}`;
+  const { error: upErr } = await supabase.storage.from(ORDER_IMAGES_BUCKET).upload(path, file, {
+    upsert: true, contentType: file.type || "image/jpeg",
+  });
+  if (upErr) throw upErr;
+  const { data } = supabase.storage.from(ORDER_IMAGES_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Ô upload 1 ảnh chứng từ (VD: Đăng ký xe, Bảo hiểm cũ) — luôn nhắc chụp mặt trước
+function DocImageUploadField({ label, orderId, kind, value, onChange }) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    try {
+      const url = await uploadOrderDocImage(orderId, kind, file);
+      onChange(url);
+    } catch (err) {
+      console.error("uploadOrderDocImage error", err);
+      setError("Tải ảnh lên thất bại, vui lòng thử lại.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
+      <p className="text-xs text-amber-700 mb-1.5 flex items-center gap-1"><AlertCircle size={12} /> Lưu ý: chụp mặt trước</p>
+      <div className="flex items-center gap-3">
+        <label className="cursor-pointer inline-flex items-center gap-1.5 text-xs font-medium text-teal-700 border border-teal-300 bg-teal-50 hover:bg-teal-100 rounded-lg px-3 py-1.5">
+          <Download size={13} className="rotate-180" /> {uploading ? "Đang tải lên..." : value ? "Đổi ảnh" : "Chọn ảnh"}
+          <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploading} onChange={handleFile} />
+        </label>
+        {value && !uploading && (
+          <a href={value} target="_blank" rel="noreferrer" className="flex items-center gap-2">
+            <img src={value} alt={label} className="h-10 w-10 object-cover rounded-lg border border-slate-200" />
+            <span className="text-xs text-teal-700 hover:underline">Xem ảnh</span>
+          </a>
+        )}
+      </div>
+      {error && <p className="text-xs text-rose-600 mt-1">{error}</p>}
+    </div>
+  );
+}
+
 function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
   const [note, setNote] = useState("");
   const [invoiceName, setInvoiceName] = useState(order.invoiceName || "");
   const [transactionCode, setTransactionCode] = useState(order.transactionCode || "");
   const [depositDate, setDepositDate] = useState(order.depositDate || "");
   const [serviceUseDate, setServiceUseDate] = useState(order.serviceUseDate || "");
+  const [insuranceDocType, setInsuranceDocType] = useState(order.insuranceDocType || "dang_ky_xe");
+  const [insuranceDocUrl, setInsuranceDocUrl] = useState(order.insuranceDocUrl || "");
   const wrappedConfirm = (orderId, extra) => onConfirm(orderId, {
     ...extra, invoiceName: invoiceName.trim(), transactionCode: transactionCode.trim(),
     depositDate: depositDate || null, serviceUseDate: serviceUseDate || null,
+    insuranceDocType: insuranceDocUrl ? insuranceDocType : null, insuranceDocUrl: insuranceDocUrl || null,
   });
   const zeroByDateRule = shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate });
   const isOTO = OTO_SPECIAL_PRODUCTS.includes(order.product);
@@ -4116,6 +4187,21 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
           )}
           {!shouldAutoCancelByDateRule({ ...order, depositDate }) && shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate }) && (
             <p className="sm:col-span-2 text-xs text-rose-600 font-medium flex items-center gap-1"><AlertCircle size={12} /> Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
+          )}
+          {order.product === P.BAO_HIEM_XE_MAY && (
+            <>
+              <SelectField label="Loại giấy tờ" value={insuranceDocType} onChange={(e) => setInsuranceDocType(e.target.value)}>
+                <option value="dang_ky_xe">Đăng ký xe</option>
+                <option value="bao_hiem_cu">Bảo hiểm cũ</option>
+              </SelectField>
+              <DocImageUploadField
+                label={`Ảnh ${INSURANCE_DOC_TYPE_LABELS[insuranceDocType]}`}
+                orderId={order.id}
+                kind={insuranceDocType}
+                value={insuranceDocUrl}
+                onChange={setInsuranceDocUrl}
+              />
+            </>
           )}
         </div>
       )}
