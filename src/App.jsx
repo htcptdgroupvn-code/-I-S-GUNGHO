@@ -610,8 +610,30 @@ const ROLE_META = {
   xu_ly: { label: "Nhân viên xử lý - chăm sóc", short: "Xử lý CSKH", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
   cht: { label: "Trưởng đơn vị", short: "Trưởng đơn vị", color: "bg-amber-50 text-amber-800 border-amber-200" },
   ke_toan: { label: "Kế toán", short: "Kế toán", color: "bg-rose-50 text-rose-700 border-rose-200" },
+  ke_toan_xe: { label: "Kế toán thanh toán (Xe) — TM1", short: "KT Xe (TM1)", color: "bg-rose-50 text-rose-700 border-rose-200" },
+  ke_toan_bao_hiem: { label: "Kế toán bảo hiểm — TM1", short: "KT Bảo hiểm (TM1)", color: "bg-rose-50 text-rose-700 border-rose-200" },
+  ke_toan_dich_vu: { label: "Kế toán dịch vụ — TM1", short: "KT Dịch vụ (TM1)", color: "bg-rose-50 text-rose-700 border-rose-200" },
+  ke_toan_kho: { label: "Kế toán kho (Phụ tùng) — TM1", short: "KT Kho (TM1)", color: "bg-rose-50 text-rose-700 border-rose-200" },
   admin: { label: "Quản trị hệ thống", short: "Admin", color: "bg-slate-800 text-white border-slate-800" },
 };
+// Các vai trò thuộc nhóm "kế toán" (đều dùng chung menu Kế toán) — 4 vai trò
+// chuyên trách chỉ dành riêng cho khối TM1 (xe máy), mỗi vai trò chỉ xử lý
+// đúng 1 nhóm sản phẩm.
+const KE_TOAN_ROLES = ["ke_toan", "ke_toan_xe", "ke_toan_bao_hiem", "ke_toan_dich_vu", "ke_toan_kho"];
+const KE_TOAN_SPECIALTY_PRODUCTS = {
+  ke_toan_xe: [P.XE_MAY],
+  ke_toan_bao_hiem: [P.BAO_HIEM_XE_MAY],
+  ke_toan_dich_vu: [P.SUA_CHUA_XE_MAY],
+  ke_toan_kho: [P.PHU_TUNG],
+};
+// Tìm đúng vai trò kế toán chuyên trách phụ trách 1 sản phẩm cụ thể (dùng để
+// gửi thông báo đúng người khi CSKH chuyển đơn TM1 cho kế toán).
+function ketoanRoleForProduct(product) {
+  for (const [role, products] of Object.entries(KE_TOAN_SPECIALTY_PRODUCTS)) {
+    if (products.includes(product)) return role;
+  }
+  return null;
+}
 
 const STATUS_META = {
   cho_phan_cong: { label: "Chờ xác nhận", color: "bg-slate-100 text-slate-600 border-slate-300" },
@@ -1747,8 +1769,12 @@ export default function App() {
     if (extra?.depositDate !== undefined) patch.deposit_date = extra.depositDate;
     if (extra?.serviceUseDate !== undefined) patch.service_use_date = extra.serviceUseDate;
     await updateOrder(orderId, patch);
-    const storeAccountants = USERS.filter((u) => u.role === "ke_toan" && u.store === order.store);
-    const targets = storeAccountants.length > 0 ? storeAccountants : USERS.filter((u) => u.role === "ke_toan");
+    // Đơn khối TM1: ưu tiên gửi đúng kế toán chuyên trách theo sản phẩm (Xe/Bảo
+    // hiểm/Dịch vụ/Kho); các khối khác vẫn gửi cho kế toán chung như cũ.
+    const specialtyRole = order.company === TM1_COMPANY_NAME ? ketoanRoleForProduct(order.product) : null;
+    const specialtyAccountants = specialtyRole ? USERS.filter((u) => u.role === specialtyRole && u.store === order.store) : [];
+    const storeAccountants = specialtyAccountants.length > 0 ? specialtyAccountants : USERS.filter((u) => u.role === "ke_toan" && u.store === order.store);
+    const targets = storeAccountants.length > 0 ? storeAccountants : USERS.filter((u) => KE_TOAN_ROLES.includes(u.role));
     await insertNotifications([
       notifRow(order.createdBy, `Khách "${order.customerName}" đồng ý mua hàng — đơn đã được chuyển kế toán xử lý.`, orderId),
       ...targets.map((kt) => notifRow(kt.id, `Có đơn hàng mới cần xác nhận thanh toán (khách "${order.customerName}").`, orderId)),
@@ -1961,6 +1987,10 @@ export default function App() {
     xu_ly: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
     cht: [GROUP_BAN_HANG, GROUP_QUAN_LY, GROUP_THONG_BAO],
     ke_toan: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
+    ke_toan_xe: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
+    ke_toan_bao_hiem: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
+    ke_toan_dich_vu: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
+    ke_toan_kho: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
     admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN, GROUP_THONG_BAO, GROUP_TAI_KHOAN],
   };
   const navGroups = NAV_GROUPS[currentUser.role];
@@ -2260,6 +2290,10 @@ const ANNOUNCEMENT_ROLE_OPTIONS = [
   { key: "xu_ly", label: "Xử lý - CSKH" },
   { key: "cht", label: "Trưởng đơn vị" },
   { key: "ke_toan", label: "Kế toán" },
+  { key: "ke_toan_xe", label: "Kế toán thanh toán - Xe (TM1)" },
+  { key: "ke_toan_bao_hiem", label: "Kế toán bảo hiểm (TM1)" },
+  { key: "ke_toan_dich_vu", label: "Kế toán dịch vụ (TM1)" },
+  { key: "ke_toan_kho", label: "Kế toán kho - Phụ tùng (TM1)" },
 ];
 
 // Cho phép gõ **chữ cần nhấn mạnh** trong nội dung thông báo — tự động in đậm,
@@ -4099,16 +4133,21 @@ function KeToanChoXacNhan({ currentUser, orders, onConfirm, onReject }) {
   const isAdmin = currentUser.role === "admin";
   const [storeFilter, setStoreFilter] = useState("");
   const effectiveStore = isAdmin ? storeFilter : currentUser.store;
+  const specialtyProducts = KE_TOAN_SPECIALTY_PRODUCTS[currentUser.role] || null;
 
   const pending = orders
     .filter((o) => o.status === "cho_ke_toan")
     .filter((o) => !effectiveStore || o.store === effectiveStore)
+    .filter((o) => !specialtyProducts || specialtyProducts.includes(o.product))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
   return (
     <div>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
-        <SectionTitle icon={ClipboardCheck} title="Đơn hàng chờ xác nhận thanh toán" subtitle={effectiveStore ? `${pending.length} đơn tại ${effectiveStore}` : `${pending.length} đơn đang chờ (tất cả chi nhánh)`} />
+        <SectionTitle icon={ClipboardCheck} title="Đơn hàng chờ xác nhận thanh toán" subtitle={
+          (specialtyProducts ? `Chuyên trách: ${specialtyProducts.join(", ")} — ` : "") +
+          (effectiveStore ? `${pending.length} đơn tại ${effectiveStore}` : `${pending.length} đơn đang chờ (tất cả chi nhánh)`)
+        } />
         {isAdmin && (
           <div className="w-full sm:w-64">
             <SelectField label="Lọc theo chi nhánh" value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)}>
@@ -4133,10 +4172,12 @@ function KeToanLichSu({ currentUser, orders }) {
   const isAdmin = currentUser.role === "admin";
   const [storeFilter, setStoreFilter] = useState("");
   const effectiveStore = isAdmin ? storeFilter : currentUser.store;
+  const specialtyProducts = KE_TOAN_SPECIALTY_PRODUCTS[currentUser.role] || null;
 
   const done = orders
     .filter((o) => ["da_thanh_toan", "khong_thanh_toan"].includes(o.status))
     .filter((o) => !effectiveStore || o.store === effectiveStore)
+    .filter((o) => !specialtyProducts || specialtyProducts.includes(o.product))
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   const totalRevenue = done.filter((o) => o.status === "da_thanh_toan").reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
   const totalCommission = done.reduce((s, o) => s + (o.commissionAmount || 0), 0);
