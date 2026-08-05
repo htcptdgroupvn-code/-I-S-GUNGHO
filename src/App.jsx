@@ -3748,11 +3748,13 @@ function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote, zeroByDat
   const qty = Number(quantity) || 0;
   const rewardPerUnit = baoHiemRewardPerUnit(Number(years));
   const totalCommission = zeroByDateRule ? 0 : qty * rewardPerUnit;
+  // Số lượng dùng để tính chỉ tiêu = số năm × số lượng bảo hiểm (khác với hoa hồng, vẫn tính theo số lượng thực tế)
+  const targetQuantity = qty * (Number(years) || 0);
 
   const handleConfirm = () => {
     if (qty <= 0) { setError("Vui lòng nhập số lượng hợp lệ."); return; }
     setError("");
-    onConfirm(order.id, { amount: 0, discountAmount: 0, commissionAmount: totalCommission, quantity: qty, note });
+    onConfirm(order.id, { amount: 0, discountAmount: 0, commissionAmount: totalCommission, quantity: targetQuantity, note });
   };
 
   return (
@@ -3766,7 +3768,11 @@ function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote, zeroByDat
         </SelectField>
         <TextField label="Số lượng bảo hiểm" type="number" min="1" required value={quantity} onChange={(e) => setQuantity(e.target.value)} />
       </div>
-      <div className="grid sm:grid-cols-1 gap-2 mt-3">
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
+          <p className="text-xs text-slate-500">Số lượng tính chỉ tiêu ({years} năm × {qty})</p>
+          <p className="text-sm font-semibold text-slate-700">{targetQuantity}</p>
+        </div>
         <div className={`rounded-xl px-3 py-2 ${zeroByDateRule ? "bg-rose-50" : "bg-amber-50"}`}>
           <p className={`text-xs ${zeroByDateRule ? "text-rose-700" : "text-amber-700"}`}>Tổng hoa hồng {zeroByDateRule ? "(bị huỷ theo quy tắc ngày)" : ""}</p>
           <p className={`text-sm font-semibold ${zeroByDateRule ? "text-rose-800" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
