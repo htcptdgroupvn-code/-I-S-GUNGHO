@@ -2200,7 +2200,13 @@ function DaiSuKhachHang({ currentUser, customers, orders, onAdd }) {
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
   const isAdmin = currentUser.role === "admin";
-  const mine = isAdmin ? customers : customers.filter((c) => c.createdBy === currentUser.id);
+  const isCht = currentUser.role === "cht";
+  // CHT chỉ xem khách hàng thuộc đơn hàng của Store mình quản lý; các vai trò khác chỉ xem khách hàng do chính mình tạo
+  const mine = isAdmin
+    ? customers
+    : isCht
+    ? customers.filter((c) => orders.some((o) => o.customerId === c.id && o.store === currentUser.store))
+    : customers.filter((c) => c.createdBy === currentUser.id);
 
   const orderCountByCustomer = useMemo(() => {
     const map = new Map();
@@ -2598,8 +2604,14 @@ function AnnouncementsPage({ currentUser, announcements, onAdd, onUpdate, onDele
 function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const [showForm, setShowForm] = useState(false);
   const isAdmin = currentUser.role === "admin";
-  const mineCustomers = isAdmin ? customers : customers.filter((c) => c.createdBy === currentUser.id);
-  const mineOrders = (isAdmin ? orders : orders.filter((o) => o.createdBy === currentUser.id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const isCht = currentUser.role === "cht";
+  // CHT chỉ xem khách hàng/đơn hàng của Store mình quản lý; các vai trò khác chỉ xem dữ liệu do chính mình tạo
+  const mineCustomers = isAdmin
+    ? customers
+    : isCht
+    ? customers.filter((c) => orders.some((o) => o.customerId === c.id && o.store === currentUser.store))
+    : customers.filter((c) => c.createdBy === currentUser.id);
+  const mineOrders = (isAdmin ? orders : isCht ? orders.filter((o) => o.store === currentUser.store) : orders.filter((o) => o.createdBy === currentUser.id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const defaultBranch = branchInfo(currentUser.store) || ALL_BRANCHES[0];
   const defaultProducts = COMPANIES.find((c) => c.name === defaultBranch.company)?.products || [];
@@ -2959,10 +2971,12 @@ function ProductMixPieChart({ orders, title = "Tỉ trọng doanh thu theo sản
 
 function DaiSuBaoCao({ currentUser, orders }) {
   const isAdmin = currentUser.role === "admin";
+  const isCht = currentUser.role === "cht";
   // Thanh lọc theo công ty — chỉ hiển thị và có tác dụng khi xem bằng tài khoản Admin
   const [viewCompany, setViewCompany] = useState("");
   const viewOrders = isAdmin && viewCompany ? orders.filter((o) => o.company === viewCompany) : orders;
-  const mine = isAdmin ? viewOrders : orders.filter((o) => o.createdBy === currentUser.id);
+  // CHT chỉ xem báo cáo của Store mình quản lý; các vai trò khác chỉ xem đơn hàng do chính mình tạo
+  const mine = isAdmin ? viewOrders : isCht ? orders.filter((o) => o.store === currentUser.store) : orders.filter((o) => o.createdBy === currentUser.id);
   const paid = mine.filter((o) => o.status === "da_thanh_toan");
   const revenue = paid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
   const commission = paid.reduce((s, o) => s + (o.commissionAmount || 0), 0);
@@ -3400,10 +3414,12 @@ function AssignCard({ order, onAssign }) {
 }
 
 function ChtPhanCong({ currentUser, orders, onAssign }) {
-  const pending = orders
+  // CHT chỉ quản lý đơn hàng thuộc đúng Store của mình
+  const storeOrders = orders.filter((o) => o.store === currentUser.store);
+  const pending = storeOrders
     .filter((o) => o.status === "cho_phan_cong")
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-  const assigned = orders
+  const assigned = storeOrders
     .filter((o) => o.status !== "cho_phan_cong")
     .sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
   const [showAssigned, setShowAssigned] = useState(true);
@@ -3415,7 +3431,7 @@ function ChtPhanCong({ currentUser, orders, onAssign }) {
 
   return (
     <div>
-      <SectionTitle icon={ArrowRightLeft} title="Đơn hàng chờ phân công" subtitle="Tất cả khối công ty / chi nhánh" />
+      <SectionTitle icon={ArrowRightLeft} title="Đơn hàng chờ phân công" subtitle={`Store "${currentUser.store}"`} />
       {pending.length === 0 ? (
         <EmptyState icon={ArrowRightLeft} text="Không có đơn hàng nào đang chờ phân công." />
       ) : (
@@ -3462,9 +3478,12 @@ function ChtPhanCong({ currentUser, orders, onAssign }) {
 }
 
 function ChtBaoCao({ currentUser, orders }) {
-  // Thanh lọc xem báo cáo theo công ty: để trống ("") = xem toàn tập đoàn
+  const isCht = currentUser.role === "cht";
+  // CHT chỉ xem báo cáo doanh số của Store mình quản lý; Admin xem toàn tập đoàn (có thể lọc theo công ty)
+  const baseOrders = isCht ? orders.filter((o) => o.store === currentUser.store) : orders;
+  // Thanh lọc xem báo cáo theo công ty: để trống ("") = xem toàn tập đoàn (chỉ áp dụng khi không phải CHT)
   const [viewCompany, setViewCompany] = useState("");
-  const viewOrders = viewCompany ? orders.filter((o) => o.company === viewCompany) : orders;
+  const viewOrders = !isCht && viewCompany ? baseOrders.filter((o) => o.company === viewCompany) : baseOrders;
 
   const paid = viewOrders.filter((o) => o.status === "da_thanh_toan");
   const revenue = paid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
@@ -3477,25 +3496,25 @@ function ChtBaoCao({ currentUser, orders }) {
 
   const handleExport = () => {
     const sheets = [
-      { name: "Tất cả đơn hàng", rows: orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(orderExportRow) },
-      { name: "Xếp hạng khối công ty", rows: buildRevenueLeaderboard(orders, (o) => o.company).map((r) => ({ "Khối công ty": r.name, "Doanh thu": r.revenue, "Số đơn": r.count })) },
-      { name: "Xếp hạng cửa hàng", rows: buildRevenueLeaderboard(orders, (o) => o.store).map((r) => ({ "Cửa hàng / chi nhánh": r.name, "Doanh thu": r.revenue, "Số đơn": r.count })) },
-      { name: "Xếp hạng Gungho (TD)", rows: buildTDLeaderboard(orders, (o) => o.createdByName).map((r) => ({ "Đại sứ": r.name, "Điểm TD": r.td })) },
-      { name: "Xếp hạng sản phẩm", rows: buildRevenueLeaderboard(orders, (o) => o.product).map((r) => ({ "Sản phẩm": r.name, "Doanh thu": r.revenue, "Số đơn": r.count })) },
+      { name: "Tất cả đơn hàng", rows: baseOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(orderExportRow) },
+      { name: "Xếp hạng khối công ty", rows: buildRevenueLeaderboard(baseOrders, (o) => o.company).map((r) => ({ "Khối công ty": r.name, "Doanh thu": r.revenue, "Số đơn": r.count })) },
+      { name: "Xếp hạng cửa hàng", rows: buildRevenueLeaderboard(baseOrders, (o) => o.store).map((r) => ({ "Cửa hàng / chi nhánh": r.name, "Doanh thu": r.revenue, "Số đơn": r.count })) },
+      { name: "Xếp hạng Gungho (TD)", rows: buildTDLeaderboard(baseOrders, (o) => o.createdByName).map((r) => ({ "Đại sứ": r.name, "Điểm TD": r.td })) },
+      { name: "Xếp hạng sản phẩm", rows: buildRevenueLeaderboard(baseOrders, (o) => o.product).map((r) => ({ "Sản phẩm": r.name, "Doanh thu": r.revenue, "Số đơn": r.count })) },
     ];
     exportToExcel(sheets, `BaoCao_DoanhSo_${currentUser.store?.replace(/\s+/g, "") || "TatCa"}_${Date.now()}.xlsx`);
   };
 
   const handleTemplateExport = () => {
-    exportGungHoCongTyTemplate({ companyName: tplCompany, orders, fromDate, toDate });
+    exportGungHoCongTyTemplate({ companyName: tplCompany, orders: baseOrders, fromDate, toDate });
   };
 
   const handleTimeTemplateExport = () => {
-    exportGungHoThoiGianTemplate({ unitName: tplUnit, orders, year: tplYear });
+    exportGungHoThoiGianTemplate({ unitName: tplUnit, orders: baseOrders, year: tplYear });
   };
 
   const handleRankingExport = () => {
-    exportGungHoRankingTemplate({ companyName: tplCompany, orders, fromDate, toDate });
+    exportGungHoRankingTemplate({ companyName: tplCompany, orders: baseOrders, fromDate, toDate });
   };
 
   return (
@@ -3504,32 +3523,34 @@ function ChtBaoCao({ currentUser, orders }) {
         <SectionTitle
           icon={BarChart3}
           title="Báo cáo doanh số Gungho"
-          subtitle={viewCompany ? `Đang xem: ${viewCompany}` : "Toàn bộ khối công ty & chi nhánh (Tập đoàn)"}
+          subtitle={isCht ? `Store "${currentUser.store}"` : viewCompany ? `Đang xem: ${viewCompany}` : "Toàn bộ khối công ty & chi nhánh (Tập đoàn)"}
         />
         <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
 
-      <Card className="p-3 sm:p-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <Building2 size={16} className="text-teal-700 shrink-0" />
-          <p className="text-sm font-medium text-slate-700 shrink-0">Xem báo cáo &amp; xếp hạng theo:</p>
-          <div className="w-full sm:w-72">
-            <select
-              value={viewCompany}
-              onChange={(e) => setViewCompany(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
-            >
-              <option value="">— Tất cả (toàn tập đoàn) —</option>
-              {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
+      {!isCht && (
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Building2 size={16} className="text-teal-700 shrink-0" />
+            <p className="text-sm font-medium text-slate-700 shrink-0">Xem báo cáo &amp; xếp hạng theo:</p>
+            <div className="w-full sm:w-72">
+              <select
+                value={viewCompany}
+                onChange={(e) => setViewCompany(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+              >
+                <option value="">— Tất cả (toàn tập đoàn) —</option>
+                {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+            {viewCompany && (
+              <button onClick={() => setViewCompany("")} className="text-xs text-teal-700 hover:underline shrink-0">
+                ← Xem lại toàn tập đoàn
+              </button>
+            )}
           </div>
-          {viewCompany && (
-            <button onClick={() => setViewCompany("")} className="text-xs text-teal-700 hover:underline shrink-0">
-              ← Xem lại toàn tập đoàn
-            </button>
-          )}
-        </div>
-      </Card>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <MetricCard label="Tổng doanh thu" value={fmtMoney(revenue)} icon={Building2} accent="teal" />
