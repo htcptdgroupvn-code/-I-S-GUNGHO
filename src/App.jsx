@@ -2016,7 +2016,7 @@ export default function App() {
 
   return (
     <div className="min-h-[600px] bg-gradient-to-b from-sky-100 via-sky-50 to-white">
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} .no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}`}</style>
       <UrgentAnnouncementModal currentUser={currentUser} announcements={announcements} />
       {/* top bar */}
       <div className="bg-white/70 backdrop-blur border-b border-white sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
@@ -2053,32 +2053,31 @@ export default function App() {
             </div>
           </div>
         </div>
-        {/* tabs — nhóm theo khu vực chức năng, tự xuống dòng trên máy tính/tablet, cuộn ngang trên điện thoại */}
-        <div className="max-w-6xl mx-auto px-4 pb-2 flex items-center gap-1 overflow-x-auto sm:flex-wrap sm:overflow-visible">
-          {navGroups.map((group, gi) => (
-            <React.Fragment key={gi}>
-              {gi > 0 && <span className="w-px h-6 bg-slate-200 mx-1.5 shrink-0" />}
-              <div className="flex items-center gap-1 shrink-0">
-                {group.map((n) => (
-                  <button
-                    key={n.key}
-                    onClick={() => setTab(n.key)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
-                      tab === n.key
-                        ? "bg-gradient-to-b from-sky-500 to-sky-600 text-white shadow-sm shadow-sky-900/20"
-                        : "text-slate-500 hover:bg-white/70 hover:text-slate-700"
-                    }`}
-                  >
-                    <n.icon size={15} /> {n.label}
-                  </button>
-                ))}
-              </div>
-            </React.Fragment>
-          ))}
-        </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-4 py-6 lg:flex lg:gap-6 lg:items-start">
+        {/* Sidebar điều hướng — hiển thị bên trái trên máy tính/tablet ngang */}
+        <aside className="hidden lg:block w-60 shrink-0 sticky top-24 space-y-3">
+          {navGroups.map((group, gi) => (
+            <div key={gi} className="bg-white/70 backdrop-blur rounded-2xl p-2 space-y-1">
+              {group.map((n) => (
+                <button
+                  key={n.key}
+                  onClick={() => setTab(n.key)}
+                  className={`w-full flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-left ${
+                    tab === n.key
+                      ? "bg-gradient-to-b from-sky-500 to-sky-600 text-white shadow-sm shadow-sky-900/20"
+                      : "text-slate-500 hover:bg-white hover:text-slate-700"
+                  }`}
+                >
+                  <n.icon size={16} className="shrink-0" /> {n.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </aside>
+
+        <div className="flex-1 min-w-0 pb-24 lg:pb-0">
         <TabErrorBoundary resetKey={tab}>
         {tab === "khach_hang" && (
           <DaiSuKhachHang currentUser={currentUser} customers={customers} orders={orders} onAdd={addCustomer} />
@@ -2117,7 +2116,31 @@ export default function App() {
           <AdminAccountsPage currentUser={currentUser} employees={USERS} />
         )}
         </TabErrorBoundary>
+        </div>
       </div>
+
+      {/* Thanh điều hướng dưới màn hình — chỉ hiện trên điện thoại/tablet dọc, cuộn ngang nếu nhiều mục */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/90 backdrop-blur border-t border-slate-200" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+        <div className="flex items-center gap-1 overflow-x-auto px-2 py-1.5 no-scrollbar">
+          {navGroups.map((group, gi) => (
+            <React.Fragment key={gi}>
+              {gi > 0 && <span className="w-px h-7 bg-slate-200 mx-1 shrink-0" />}
+              {group.map((n) => (
+                <button
+                  key={n.key}
+                  onClick={() => setTab(n.key)}
+                  className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[10.5px] font-medium whitespace-nowrap shrink-0 transition ${
+                    tab === n.key ? "text-sky-600" : "text-slate-400"
+                  }`}
+                >
+                  <n.icon size={18} />
+                  {n.label}
+                </button>
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+      </nav>
       {showChangePassword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5">
