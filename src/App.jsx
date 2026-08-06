@@ -636,10 +636,12 @@ function ketoanRoleForProduct(product) {
   return null;
 }
 
-// TM1 - Dịch vụ sửa chữa: chăm sóc khách hàng do Kỹ thuật trưởng của Store phụ trách
-// (thay vì nhân viên Xử lý - CSKH thông thường). Các sản phẩm/công ty khác vẫn dùng "xu_ly".
+// TM1 - Dịch vụ sửa chữa & Phụ tùng bán lẻ: chăm sóc khách hàng do Kỹ thuật trưởng
+// của Store phụ trách (thay vì nhân viên Xử lý - CSKH thông thường). Các sản
+// phẩm/công ty khác vẫn dùng "xu_ly".
+const KY_THUAT_TRUONG_PRODUCTS = [P.SUA_CHUA_XE_MAY, P.PHU_TUNG];
 function handlerRoleForOrder({ company, product }) {
-  return company === TM1_COMPANY_NAME && product === P.SUA_CHUA_XE_MAY ? "ky_thuat_truong" : "xu_ly";
+  return company === TM1_COMPANY_NAME && KY_THUAT_TRUONG_PRODUCTS.includes(product) ? "ky_thuat_truong" : "xu_ly";
 }
 
 const STATUS_META = {
@@ -680,11 +682,11 @@ function shouldZeroCommissionByDateRule(order) {
   if (!registeredDate || !depositDate || !serviceDate) return false;
   if (registeredDate.getTime() > depositDate.getTime()) return false; // trường hợp này bị tự động huỷ, không phải chỉ bỏ hoa hồng
   const daysBeforeUse = Math.round((serviceDate.getTime() - registeredDate.getTime()) / 86400000);
-  // Riêng sản phẩm Dịch vụ sửa chữa (TM1): đăng ký trước ngày sử dụng dịch vụ từ 1
-  // ngày trở lên vẫn ghi nhận đủ chỉ tiêu + hoa hồng; chỉ mất hoa hồng khi đăng ký
-  // ngay trong ngày sử dụng dịch vụ (0 ngày trước). Các sản phẩm TM1 khác giữ
-  // ngưỡng cũ (<=1 ngày là mất hoa hồng).
-  const threshold = order.product === P.SUA_CHUA_XE_MAY ? 0 : 1;
+  // Riêng Dịch vụ sửa chữa & Phụ tùng bán lẻ (TM1, do Kỹ thuật trưởng chăm sóc):
+  // đăng ký trước ngày sử dụng dịch vụ từ 1 ngày trở lên vẫn ghi nhận đủ chỉ tiêu +
+  // hoa hồng; chỉ mất hoa hồng khi đăng ký ngay trong ngày sử dụng dịch vụ (0 ngày
+  // trước). Các sản phẩm TM1 khác giữ ngưỡng cũ (<=1 ngày là mất hoa hồng).
+  const threshold = KY_THUAT_TRUONG_PRODUCTS.includes(order.product) ? 0 : 1;
   return daysBeforeUse <= threshold;
 }
 // Ngày đăng ký SAU ngày đặt cọc (khối TM1) -> đơn sẽ tự động chuyển "Không
@@ -3149,10 +3151,10 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
   const [invoiceError, setInvoiceError] = useState("");
 
   const isTM1Order = order.company === TM1_COMPANY_NAME;
-  const isDichVuSuaChua = order.product === P.SUA_CHUA_XE_MAY;
+  const showCustomerSourceField = KY_THUAT_TRUONG_PRODUCTS.includes(order.product);
   const handleForward = () => {
     const dateFields = isTM1Order ? { depositDate: depositDate || null, serviceUseDate: serviceUseDate || null } : {};
-    const sourceField = isDichVuSuaChua ? { customerOver3Years } : {};
+    const sourceField = showCustomerSourceField ? { customerOver3Years } : {};
     if (isHTCOrder) {
       if (!amount || Number(amount) <= 0 || !invoiceName.trim() || !invoiceNumber.trim()) {
         setInvoiceError("Vui lòng điền đủ Số tiền đơn hàng, Tên khách hàng xuất hóa đơn và Số hóa đơn trước khi chuyển kế toán.");
@@ -3201,7 +3203,7 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
             <TextField label="Ngày đặt cọc" type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
             <TextField label="Ngày sử dụng dịch vụ" type="date" value={serviceUseDate} onChange={(e) => setServiceUseDate(e.target.value)} />
           </div>
-          {isDichVuSuaChua && (
+          {showCustomerSourceField && (
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={customerOver3Years} onChange={(e) => setCustomerOver3Years(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
               <span className="text-sm text-slate-700">Nguồn khách hàng trên 3 năm <span className="text-xs text-slate-400">(mặc định không chọn — Kế toán dịch vụ vẫn chỉnh sửa được)</span></span>
@@ -4000,6 +4002,65 @@ function DichVuSuaChuaForm({ order, onConfirm, onReject, note, setNote, zeroByDa
   );
 }
 
+function PhuTungKhoForm({ order, onConfirm, onReject, note, setNote, zeroByDateRule }) {
+  const [customer3Years, setCustomer3Years] = useState(!!order.customerOver3Years);
+  const [materialsRevenue, setMaterialsRevenue] = useState(order.materialsRevenue ?? "");
+  const [materialsDiscount, setMaterialsDiscount] = useState(order.materialsDiscount ?? 0);
+  const [error, setError] = useState("");
+
+  const mr = Number(materialsRevenue) || 0;
+  const md = Number(materialsDiscount) || 0;
+  const finalRevenue = Math.max(mr - md, 0);
+  const RATE = 0.05;
+
+  // Giống Kế toán dịch vụ: khách hàng nguồn trên 3 năm luôn tính hoa hồng trên doanh
+  // thu sau giảm giá; trường hợp còn lại, có giảm giá thì mất hoa hồng khoản đó.
+  const rawCommission = customer3Years ? finalRevenue * RATE : (md > 0 ? 0 : mr * RATE);
+  const totalCommission = zeroByDateRule ? 0 : rawCommission;
+
+  const handleConfirm = () => {
+    if (mr <= 0) { setError("Vui lòng nhập doanh thu hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, {
+      amount: mr, discountAmount: md, commissionAmount: totalCommission, note,
+      customerOver3Years: customer3Years,
+      materialsRevenue: mr, materialsDiscount: md,
+    });
+  };
+
+  return (
+    <>
+      <p className="text-xs text-slate-400 mb-2">Phụ tùng bán lẻ (TM1) — hoa hồng tính theo quy tắc nguồn khách hàng, giống Kế toán dịch vụ.</p>
+      <label className="flex items-center gap-2 mb-3 cursor-pointer">
+        <input type="checkbox" checked={customer3Years} onChange={(e) => setCustomer3Years(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+        <span className="text-sm font-medium text-slate-700">Nguồn khách hàng trên 3 năm</span>
+      </label>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <MoneyField label="Doanh thu vật tư / phụ tùng (đ)" value={materialsRevenue} onChange={setMaterialsRevenue} />
+        <MoneyField label="Giảm giá vật tư / phụ tùng (đ)" value={materialsDiscount} onChange={setMaterialsDiscount} />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
+          <p className="text-xs text-slate-500">Doanh thu sau giảm giá (tính chỉ tiêu)</p>
+          <p className="text-sm font-semibold text-slate-700">{fmtMoney(finalRevenue)}</p>
+        </div>
+        <div className={`rounded-xl px-3 py-2 ${zeroByDateRule ? "bg-rose-50" : "bg-amber-50"}`}>
+          <p className={`text-xs ${zeroByDateRule ? "text-rose-700" : "text-amber-700"}`}>Tổng hoa hồng {zeroByDateRule ? "(bị huỷ theo quy tắc ngày)" : ""}</p>
+          <p className={`text-sm font-semibold ${zeroByDateRule ? "text-rose-800" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+      </div>
+    </>
+  );
+}
+
 function OTOMoiForm({ order, onConfirm, onReject, note, setNote }) {
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState("");
@@ -4390,7 +4451,7 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
       })()}
       {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
-      {order.product === P.PHU_TUNG && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.PHU_TUNG && <PhuTungKhoForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.SUA_CHUA_XE_MAY && <DichVuSuaChuaForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.O_TO && <OTOMoiForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
       {order.product === P.PHU_KIEN_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={9} />}
