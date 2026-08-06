@@ -655,6 +655,27 @@ function handlerRoleLabel(role) {
   return "Người chăm sóc";
 }
 
+// Xác định tab phù hợp để mở khi bấm vào 1 thông báo có gắn đơn hàng — tuỳ theo
+// vai trò người xem và trạng thái hiện tại của đơn.
+const HANDLER_ROLES = ["xu_ly", "ky_thuat_truong", "le_tan"];
+const KE_TOAN_ROLES_LIST = ["ke_toan", "ke_toan_xe", "ke_toan_bao_hiem", "ke_toan_dich_vu", "ke_toan_kho"];
+function tabForOrderNotif(order, currentUser) {
+  const role = currentUser.role;
+  if (role === "cht" || role === "admin") {
+    if (order.status === "cho_phan_cong") return "phan_cong";
+  }
+  if (HANDLER_ROLES.includes(role) || role === "admin") {
+    if (order.status === "cho_xu_ly" || order.status === "dang_cham_soc") return "duoc_giao";
+  }
+  if (KE_TOAN_ROLES_LIST.includes(role) || role === "admin") {
+    if (order.status === "cho_ke_toan") return "cho_xac_nhan";
+    if (order.status === "da_thanh_toan" || order.status === "khong_thanh_toan") return "lich_su";
+  }
+  if (HANDLER_ROLES.includes(role)) return "don_hang_cskh";
+  if (role === "cht") return "phan_cong";
+  return "don_hang_ds";
+}
+
 const STATUS_META = {
   cho_phan_cong: { label: "Chờ xác nhận", color: "bg-slate-100 text-slate-600 border-slate-300" },
   cho_xu_ly: { label: "Chờ xác nhận", color: "bg-slate-100 text-slate-600 border-slate-300" },
@@ -880,8 +901,8 @@ function StatusBadge({ status }) {
   return <Badge className={m.color}>{m.label}</Badge>;
 }
 
-function Card({ children, className = "" }) {
-  return <div className={`bg-white/90 backdrop-blur rounded-3xl border border-white shadow-sm shadow-sky-900/5 hover:shadow-md transition-shadow duration-200 ${className}`}>{children}</div>;
+function Card({ children, className = "", ...rest }) {
+  return <div className={`bg-white/90 backdrop-blur rounded-3xl border border-white shadow-sm shadow-sky-900/5 hover:shadow-md transition-shadow duration-200 ${className}`} {...rest}>{children}</div>;
 }
 
 function SectionTitle({ icon: Icon, title, subtitle }) {
@@ -1493,7 +1514,7 @@ function AdminAccountsPage({ currentUser, employees }) {
 // Notification bell
 // ---------------------------------------------------------------------------
 
-function NotifBell({ notifications, currentUser, onMarkRead }) {
+function NotifBell({ notifications, currentUser, onMarkRead, onGoToOrder }) {
   const [open, setOpen] = useState(false);
   const mine = notifications.filter((n) => n.toUserId === currentUser.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const unread = mine.filter((n) => !n.read).length;
@@ -1532,11 +1553,20 @@ function NotifBell({ notifications, currentUser, onMarkRead }) {
               mine.map((n) => (
                 <div
                   key={n.id}
-                  onClick={() => !n.read && onMarkRead([n.id])}
+                  onClick={() => {
+                    if (!n.read) onMarkRead([n.id]);
+                    if (n.orderId) {
+                      setOpen(false);
+                      onGoToOrder(n.orderId);
+                    }
+                  }}
                   className={`px-4 py-3 border-b border-slate-50 last:border-0 cursor-pointer ${!n.read ? "bg-teal-50/50" : ""}`}
                 >
                   <p className={`text-sm ${!n.read ? "font-medium text-slate-800" : "text-slate-600"}`}>{n.message}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">{fmtDate(n.createdAt)}</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-[11px] text-slate-400">{fmtDate(n.createdAt)}</p>
+                    {n.orderId && <span className="text-[11px] text-sky-600 font-medium">Xem đơn hàng →</span>}
+                  </div>
                 </div>
               ))
             )}
@@ -1643,6 +1673,27 @@ export default function App() {
     const { error } = await supabase.from("notifications").update({ read: true }).in("id", ids);
     if (error) console.error("mark read error", error);
   };
+
+  // Bấm vào 1 thông báo có gắn đơn hàng → chuyển sang đúng tab chứa đơn đó rồi
+  // cuộn tới và làm nổi bật thẻ đơn hàng tương ứng.
+  const goToOrder = useCallback((orderId) => {
+    if (!orderId) return;
+    const order = orders.find((o) => o.id === orderId);
+    if (!order) {
+      showToast("Không tìm thấy đơn hàng này (có thể đã bị xoá).");
+      return;
+    }
+    const targetTab = tabForOrderNotif(order, currentUser);
+    setTab(targetTab);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-order-id="${orderId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("highlight-order");
+        setTimeout(() => el.classList.remove("highlight-order"), 3200);
+      }
+    }, 150);
+  }, [orders, currentUser]);
 
   // ---- action handlers -----------------------------------------------
 
@@ -2054,7 +2105,7 @@ export default function App() {
 
   return (
     <div className="min-h-[600px] bg-gradient-to-b from-sky-100 via-sky-50 to-white">
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} .no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none}`}</style>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} .no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none} @keyframes highlightPulse{0%,100%{box-shadow:0 0 0 0 rgba(2,132,199,0)}15%{box-shadow:0 0 0 4px rgba(2,132,199,.45)}} .highlight-order{animation:highlightPulse 1.6s ease-out 2}`}</style>
       <UrgentAnnouncementModal currentUser={currentUser} announcements={announcements} />
       {/* top bar */}
       <div className="bg-white/70 backdrop-blur border-b border-white sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
@@ -2073,7 +2124,7 @@ export default function App() {
             <GhostButton onClick={refreshAll} className="!px-2.5" title="Làm mới dữ liệu">
               <RefreshCw size={14} />
             </GhostButton>
-            <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} />
+            <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} onGoToOrder={goToOrder} />
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-sky-600 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-sm">
                 {currentUser.name.split(" ").slice(-1)[0][0]}
@@ -2809,7 +2860,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
 function OrderRow({ order, showCommission, right }) {
   const isPaid = order.status === "da_thanh_toan";
   return (
-    <Card className="p-4">
+    <Card className="p-4" data-order-id={order.id}>
       <div className="flex items-start gap-3">
         <div className="w-11 h-11 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
           <Store size={18} />
@@ -3185,7 +3236,7 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
   };
 
   return (
-    <Card className="p-4">
+    <Card className="p-4" data-order-id={order.id}>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -3436,7 +3487,7 @@ function AssignCard({ order, onAssign }) {
   const storeHandlers = USERS.filter((u) => u.role === handlerRole && u.store === order.store);
   const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === handlerRole);
   return (
-    <Card className="p-4">
+    <Card className="p-4" data-order-id={order.id}>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div>
           <p className="font-medium text-slate-800">{order.customerName}</p>
@@ -3668,16 +3719,15 @@ function ChtBaoCao({ currentUser, orders }) {
 // ---------------------------------------------------------------------------
 
 function AccountingCard({ order, onConfirm, onReject }) {
-  if (
+  const inner =
     XE_MAY_SPECIAL_PRODUCTS.includes(order.product) ||
     OTO_SPECIAL_PRODUCTS.includes(order.product) ||
     HTC_SPECIAL_PRODUCTS.includes(order.product) ||
     VYC_SPECIAL_PRODUCTS.includes(order.product) ||
     VTNN_SPECIAL_PRODUCTS.includes(order.product)
-  ) {
-    return <XeMaySpecialAccountingCard order={order} onConfirm={onConfirm} onReject={onReject} />;
-  }
-  return <GenericAccountingCard order={order} onConfirm={onConfirm} onReject={onReject} />;
+      ? <XeMaySpecialAccountingCard order={order} onConfirm={onConfirm} onReject={onReject} />
+      : <GenericAccountingCard order={order} onConfirm={onConfirm} onReject={onReject} />;
+  return <div data-order-id={order.id}>{inner}</div>;
 }
 
 function InvoiceInfoStrip({ order }) {
