@@ -750,6 +750,11 @@ function mapOrder(o) {
     expectedServiceDate: o.expected_service_date || "",
     depositDate: o.deposit_date || "", serviceUseDate: o.service_use_date || "",
     insuranceDocType: o.insurance_doc_type || "", insuranceDocUrl: o.insurance_doc_url || "",
+    customerOver3Years: !!o.customer_over_3_years,
+    laborRevenue: o.labor_revenue === null || o.labor_revenue === undefined ? undefined : Number(o.labor_revenue),
+    laborDiscount: o.labor_discount === null || o.labor_discount === undefined ? undefined : Number(o.labor_discount),
+    materialsRevenue: o.materials_revenue === null || o.materials_revenue === undefined ? undefined : Number(o.materials_revenue),
+    materialsDiscount: o.materials_discount === null || o.materials_discount === undefined ? undefined : Number(o.materials_discount),
     createdBy: o.created_by, createdByName: o.created_by_name, createdByPhone: o.created_by_phone || "", createdByStore: o.created_by_store || "",
     assignedHandler: o.assigned_handler, assignedHandlerName: o.assigned_handler_name,
     status: o.status, handlerNote: o.handler_note, accountantNote: o.accountant_note,
@@ -1792,6 +1797,7 @@ export default function App() {
     }
     if (extra?.depositDate !== undefined) patch.deposit_date = extra.depositDate;
     if (extra?.serviceUseDate !== undefined) patch.service_use_date = extra.serviceUseDate;
+    if (extra?.customerOver3Years !== undefined) patch.customer_over_3_years = extra.customerOver3Years;
     await updateOrder(orderId, patch);
     // Đơn khối TM1: ưu tiên gửi đúng kế toán chuyên trách theo sản phẩm (Xe/Bảo
     // hiểm/Dịch vụ/Kho); các khối khác vẫn gửi cho kế toán chung như cũ.
@@ -1818,7 +1824,7 @@ export default function App() {
     showToast("Đã cập nhật trạng thái đơn hàng");
   };
 
-  const confirmPayment = async (orderId, { amount, discountAmount, commissionAmount, quantity, note, invoiceName, transactionCode, depositDate, serviceUseDate, insuranceDocType, insuranceDocUrl }) => {
+  const confirmPayment = async (orderId, { amount, discountAmount, commissionAmount, quantity, note, invoiceName, transactionCode, depositDate, serviceUseDate, insuranceDocType, insuranceDocUrl, customerOver3Years, laborRevenue, laborDiscount, materialsRevenue, materialsDiscount }) => {
     const order = orders.find((o) => o.id === orderId);
     const effectiveDepositDate = depositDate !== undefined ? depositDate : order.depositDate;
     const effectiveServiceUseDate = serviceUseDate !== undefined ? serviceUseDate : order.serviceUseDate;
@@ -1859,6 +1865,11 @@ export default function App() {
       if (serviceUseDate !== undefined) patch.service_use_date = serviceUseDate;
       if (insuranceDocType !== undefined) patch.insurance_doc_type = insuranceDocType;
       if (insuranceDocUrl !== undefined) patch.insurance_doc_url = insuranceDocUrl;
+      if (customerOver3Years !== undefined) patch.customer_over_3_years = customerOver3Years;
+      if (laborRevenue !== undefined) patch.labor_revenue = laborRevenue;
+      if (laborDiscount !== undefined) patch.labor_discount = laborDiscount;
+      if (materialsRevenue !== undefined) patch.materials_revenue = materialsRevenue;
+      if (materialsDiscount !== undefined) patch.materials_discount = materialsDiscount;
     }
     await updateOrder(orderId, patch);
     await insertNotifications([
@@ -3129,11 +3140,14 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
   const [invoiceNumber, setInvoiceNumber] = useState(order.invoiceNumber || "");
   const [depositDate, setDepositDate] = useState(order.depositDate || "");
   const [serviceUseDate, setServiceUseDate] = useState(order.serviceUseDate || order.expectedServiceDate || "");
+  const [customerOver3Years, setCustomerOver3Years] = useState(!!order.customerOver3Years);
   const [invoiceError, setInvoiceError] = useState("");
 
   const isTM1Order = order.company === TM1_COMPANY_NAME;
+  const isDichVuSuaChua = order.product === P.SUA_CHUA_XE_MAY;
   const handleForward = () => {
     const dateFields = isTM1Order ? { depositDate: depositDate || null, serviceUseDate: serviceUseDate || null } : {};
+    const sourceField = isDichVuSuaChua ? { customerOver3Years } : {};
     if (isHTCOrder) {
       if (!amount || Number(amount) <= 0 || !invoiceName.trim() || !invoiceNumber.trim()) {
         setInvoiceError("Vui lòng điền đủ Số tiền đơn hàng, Tên khách hàng xuất hóa đơn và Số hóa đơn trước khi chuyển kế toán.");
@@ -3146,7 +3160,7 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
         ...dateFields,
       });
     } else {
-      onForward(order.id, note, dateFields);
+      onForward(order.id, note, { ...dateFields, ...sourceField });
     }
   };
 
@@ -3182,6 +3196,12 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
             <TextField label="Ngày đặt cọc" type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
             <TextField label="Ngày sử dụng dịch vụ" type="date" value={serviceUseDate} onChange={(e) => setServiceUseDate(e.target.value)} />
           </div>
+          {isDichVuSuaChua && (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={customerOver3Years} onChange={(e) => setCustomerOver3Years(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+              <span className="text-sm text-slate-700">Nguồn khách hàng trên 3 năm <span className="text-xs text-slate-400">(mặc định không chọn — Kế toán dịch vụ vẫn chỉnh sửa được)</span></span>
+            </label>
+          )}
         </div>
       )}
       {order.status === "dang_cham_soc" && isHTCOrder && (
@@ -3905,6 +3925,76 @@ function ServiceRevenueForm({ order, onConfirm, onReject, note, setNote, ratePer
 }
 
 // ---- Xe mới ô tô: thưởng 900.000đ/xe theo mức giảm giá ngoài chính sách ----
+function DichVuSuaChuaForm({ order, onConfirm, onReject, note, setNote, zeroByDateRule }) {
+  const [customer3Years, setCustomer3Years] = useState(!!order.customerOver3Years);
+  const [laborRevenue, setLaborRevenue] = useState(order.laborRevenue ?? "");
+  const [laborDiscount, setLaborDiscount] = useState(order.laborDiscount ?? 0);
+  const [materialsRevenue, setMaterialsRevenue] = useState(order.materialsRevenue ?? "");
+  const [materialsDiscount, setMaterialsDiscount] = useState(order.materialsDiscount ?? 0);
+  const [error, setError] = useState("");
+
+  const lr = Number(laborRevenue) || 0;
+  const ld = Number(laborDiscount) || 0;
+  const mr = Number(materialsRevenue) || 0;
+  const md = Number(materialsDiscount) || 0;
+  const totalRevenue = lr + mr;
+  const totalDiscount = ld + md;
+  const finalRevenue = Math.max(totalRevenue - totalDiscount, 0);
+  const RATE = 0.05;
+
+  // Khách hàng nguồn trên 3 năm: luôn tính hoa hồng trên doanh thu sau giảm giá,
+  // dù có phát sinh giảm giá ở khoản nào hay không.
+  // Trường hợp còn lại: khoản nào bị giảm giá thì không tính hoa hồng cho khoản đó.
+  const rawCommission = customer3Years
+    ? finalRevenue * RATE
+    : (ld > 0 ? 0 : lr * RATE) + (md > 0 ? 0 : mr * RATE);
+  const totalCommission = zeroByDateRule ? 0 : rawCommission;
+
+  const handleConfirm = () => {
+    if (totalRevenue <= 0) { setError("Vui lòng nhập ít nhất 1 khoản doanh thu hợp lệ."); return; }
+    setError("");
+    onConfirm(order.id, {
+      amount: totalRevenue, discountAmount: totalDiscount, commissionAmount: totalCommission, note,
+      customerOver3Years: customer3Years,
+      laborRevenue: lr, laborDiscount: ld, materialsRevenue: mr, materialsDiscount: md,
+    });
+  };
+
+  return (
+    <>
+      <p className="text-xs text-slate-400 mb-2">Dịch vụ sửa chữa (TM1) — nhập riêng doanh thu tiền công & vật tư, hoa hồng tính theo quy tắc nguồn khách hàng.</p>
+      <label className="flex items-center gap-2 mb-3 cursor-pointer">
+        <input type="checkbox" checked={customer3Years} onChange={(e) => setCustomer3Years(e.target.checked)} className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+        <span className="text-sm font-medium text-slate-700">Nguồn khách hàng trên 3 năm</span>
+      </label>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <MoneyField label="Doanh thu tiền công sửa chữa (đ)" value={laborRevenue} onChange={setLaborRevenue} />
+        <MoneyField label="Giảm giá tiền công (đ)" value={laborDiscount} onChange={setLaborDiscount} />
+        <MoneyField label="Doanh thu vật tư dịch vụ (đ)" value={materialsRevenue} onChange={setMaterialsRevenue} />
+        <MoneyField label="Giảm giá vật tư dịch vụ (đ)" value={materialsDiscount} onChange={setMaterialsDiscount} />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2 mt-3">
+        <div className="bg-slate-50 rounded-xl px-3 py-2">
+          <p className="text-xs text-slate-500">Doanh thu sau giảm giá (tính chỉ tiêu)</p>
+          <p className="text-sm font-semibold text-slate-700">{fmtMoney(finalRevenue)}</p>
+        </div>
+        <div className={`rounded-xl px-3 py-2 ${zeroByDateRule ? "bg-rose-50" : "bg-amber-50"}`}>
+          <p className={`text-xs ${zeroByDateRule ? "text-rose-700" : "text-amber-700"}`}>Tổng hoa hồng {zeroByDateRule ? "(bị huỷ theo quy tắc ngày)" : ""}</p>
+          <p className={`text-sm font-semibold ${zeroByDateRule ? "text-rose-800" : "text-amber-800"}`}>{fmtMoney(totalCommission)}</p>
+        </div>
+      </div>
+      {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+      <div className="mt-3">
+        <TextAreaField label="Ghi chú kế toán" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ghi chú giao dịch..." />
+      </div>
+      <div className="flex flex-wrap gap-2 mt-3">
+        <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
+        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+      </div>
+    </>
+  );
+}
+
 function OTOMoiForm({ order, onConfirm, onReject, note, setNote }) {
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState("");
@@ -4291,7 +4381,7 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
       {order.product === P.XE_MAY && <XeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.BAO_HIEM_XE_MAY && <BaoHiemXeMayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.PHU_TUNG && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
-      {order.product === P.SUA_CHUA_XE_MAY && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.SUA_CHUA_XE_MAY && <DichVuSuaChuaForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.O_TO && <OTOMoiForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
       {order.product === P.PHU_KIEN_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={9} />}
       {order.product === P.BAO_HIEM_O_TO && <BaoHiemOTOForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
