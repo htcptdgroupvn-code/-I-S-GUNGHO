@@ -680,7 +680,12 @@ function shouldZeroCommissionByDateRule(order) {
   if (!registeredDate || !depositDate || !serviceDate) return false;
   if (registeredDate.getTime() > depositDate.getTime()) return false; // trường hợp này bị tự động huỷ, không phải chỉ bỏ hoa hồng
   const daysBeforeUse = Math.round((serviceDate.getTime() - registeredDate.getTime()) / 86400000);
-  return daysBeforeUse <= 1;
+  // Riêng sản phẩm Dịch vụ sửa chữa (TM1): đăng ký trước ngày sử dụng dịch vụ từ 1
+  // ngày trở lên vẫn ghi nhận đủ chỉ tiêu + hoa hồng; chỉ mất hoa hồng khi đăng ký
+  // ngay trong ngày sử dụng dịch vụ (0 ngày trước). Các sản phẩm TM1 khác giữ
+  // ngưỡng cũ (<=1 ngày là mất hoa hồng).
+  const threshold = order.product === P.SUA_CHUA_XE_MAY ? 0 : 1;
+  return daysBeforeUse <= threshold;
 }
 // Ngày đăng ký SAU ngày đặt cọc (khối TM1) -> đơn sẽ tự động chuyển "Không
 // thành công" thay vì chỉ bỏ hoa hồng.
@@ -1851,7 +1856,7 @@ export default function App() {
     const zeroCommissionByDateRule = shouldZeroCommissionByDateRule({ ...order, depositDate: effectiveDepositDate, serviceUseDate: effectiveServiceUseDate });
     const finalCommission = zeroCommissionByDateRule ? 0 : Number(commissionAmount) || 0;
     const historyLine = zeroCommissionByDateRule
-      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}. Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày — chỉ ghi nhận chỉ tiêu, không tính hoa hồng.`
+      ? `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}. ${order.product === P.SUA_CHUA_XE_MAY ? "Đăng ký ngay trong ngày sử dụng dịch vụ" : "Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày"} — chỉ ghi nhận chỉ tiêu, không tính hoa hồng.`
       : `${fmtDate(new Date().toISOString())} — ${currentUser.name} xác nhận thanh toán ${fmtMoney(totalAmount)}, cập nhật hoa hồng ${fmtMoney(finalCommission)}`;
     const newHistory = [...order.history, historyLine];
     const patch = {
@@ -4346,7 +4351,12 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
             <p className="sm:col-span-2 text-xs text-rose-700 font-semibold flex items-center gap-1 bg-rose-50 rounded-lg px-2 py-1.5"><XCircle size={13} /> Ngày đăng ký sau ngày đặt cọc — bấm "Xác nhận thanh toán" sẽ tự động chuyển đơn "Không thành công" thay vì thanh toán.</p>
           )}
           {!shouldAutoCancelByDateRule({ ...order, depositDate }) && shouldZeroCommissionByDateRule({ ...order, depositDate, serviceUseDate }) && (
-            <p className="sm:col-span-2 text-xs text-rose-600 font-medium flex items-center gap-1"><AlertCircle size={12} /> Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận.</p>
+            <p className="sm:col-span-2 text-xs text-rose-600 font-medium flex items-center gap-1">
+              <AlertCircle size={12} />
+              {order.product === P.SUA_CHUA_XE_MAY
+                ? "Đăng ký ngay trong ngày sử dụng dịch vụ — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận."
+                : "Đăng ký cách ngày sử dụng dịch vụ không quá 1 ngày — chỉ tính chỉ tiêu, KHÔNG tính hoa hồng khi xác nhận."}
+            </p>
           )}
           {order.product === P.BAO_HIEM_XE_MAY && (
             <>
