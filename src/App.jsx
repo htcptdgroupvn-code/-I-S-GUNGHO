@@ -608,6 +608,7 @@ let USERS = [];
 const ROLE_META = {
   dai_su: { label: "Đại sứ Gungho", short: "Đại sứ", color: "bg-teal-50 text-teal-700 border-teal-200" },
   xu_ly: { label: "Nhân viên xử lý - chăm sóc", short: "Xử lý CSKH", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  ky_thuat_truong: { label: "Kỹ thuật trưởng — TM1", short: "KT trưởng (TM1)", color: "bg-cyan-50 text-cyan-700 border-cyan-200" },
   cht: { label: "Trưởng đơn vị", short: "Trưởng đơn vị", color: "bg-amber-50 text-amber-800 border-amber-200" },
   ke_toan: { label: "Kế toán", short: "Kế toán", color: "bg-rose-50 text-rose-700 border-rose-200" },
   ke_toan_xe: { label: "Kế toán thanh toán (Xe) — TM1", short: "KT Xe (TM1)", color: "bg-rose-50 text-rose-700 border-rose-200" },
@@ -633,6 +634,12 @@ function ketoanRoleForProduct(product) {
     if (products.includes(product)) return role;
   }
   return null;
+}
+
+// TM1 - Dịch vụ sửa chữa: chăm sóc khách hàng do Kỹ thuật trưởng của Store phụ trách
+// (thay vì nhân viên Xử lý - CSKH thông thường). Các sản phẩm/công ty khác vẫn dùng "xu_ly".
+function handlerRoleForOrder({ company, product }) {
+  return company === TM1_COMPANY_NAME && product === P.SUA_CHUA_XE_MAY ? "ky_thuat_truong" : "xu_ly";
 }
 
 const STATUS_META = {
@@ -2004,6 +2011,7 @@ export default function App() {
   const NAV_GROUPS = {
     dai_su: [GROUP_BAN_HANG, GROUP_THONG_BAO],
     xu_ly: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
+    ky_thuat_truong: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
     cht: [GROUP_BAN_HANG, GROUP_QUAN_LY, GROUP_THONG_BAO],
     ke_toan: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
     ke_toan_xe: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
@@ -2336,6 +2344,7 @@ function AdminCustomerGroups({ customers, orderCountByCustomer }) {
 const ANNOUNCEMENT_ROLE_OPTIONS = [
   { key: "dai_su", label: "Đại sứ Gungho" },
   { key: "xu_ly", label: "Xử lý - CSKH" },
+  { key: "ky_thuat_truong", label: "Kỹ thuật trưởng (TM1)" },
   { key: "cht", label: "Trưởng đơn vị" },
   { key: "ke_toan", label: "Kế toán" },
   { key: "ke_toan_xe", label: "Kế toán thanh toán - Xe (TM1)" },
@@ -2631,8 +2640,9 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const branchesForCompany = COMPANIES.find((c) => c.name === form.company)?.branches || [];
   const productsForCompany = COMPANIES.find((c) => c.name === form.company)?.products || [];
   const selectedBranch = branchInfo(form.store);
-  const storeHandlers = USERS.filter((u) => u.role === "xu_ly" && u.store === form.store);
-  const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === "xu_ly");
+  const handlerRole = handlerRoleForOrder({ company: form.company, product: form.product });
+  const storeHandlers = USERS.filter((u) => u.role === handlerRole && u.store === form.store);
+  const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === handlerRole);
   // Khối TM1 - Bảo hiểm xe máy: đơn chuyển thẳng Kế toán bảo hiểm, không qua CSKH
   const isTM1DirectInsurance = form.company === TM1_COMPANY_NAME && form.product === P.BAO_HIEM_XE_MAY;
 
@@ -2730,7 +2740,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
                 <ShieldCheck size={15} /> Đơn Bảo hiểm xe máy (TM1) sẽ tự động chuyển thẳng đến Kế toán bảo hiểm của "{form.store || "chi nhánh"}", không qua CSKH.
               </div>
             ) : (
-              <SelectField label="Người chăm sóc (tùy chọn)" value={form.handlerId} onChange={(e) => setForm({ ...form, handlerId: e.target.value })}>
+              <SelectField label={handlerRole === "ky_thuat_truong" ? "Kỹ thuật trưởng (tùy chọn)" : "Người chăm sóc (tùy chọn)"} value={form.handlerId} onChange={(e) => setForm({ ...form, handlerId: e.target.value })}>
                 <option value="">— Không chọn, gửi về trưởng đơn vị —</option>
                 {handlers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
               </SelectField>
@@ -3382,8 +3392,9 @@ function XuLyBaoCao({ currentUser, orders }) {
 
 function AssignCard({ order, onAssign }) {
   const [handlerId, setHandlerId] = useState("");
-  const storeHandlers = USERS.filter((u) => u.role === "xu_ly" && u.store === order.store);
-  const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === "xu_ly");
+  const handlerRole = handlerRoleForOrder(order);
+  const storeHandlers = USERS.filter((u) => u.role === handlerRole && u.store === order.store);
+  const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === handlerRole);
   return (
     <Card className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
@@ -3400,7 +3411,7 @@ function AssignCard({ order, onAssign }) {
       </div>
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex-1 min-w-[180px]">
-          <SelectField label="Chọn nhân viên xử lý" value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
+          <SelectField label={handlerRole === "ky_thuat_truong" ? "Chọn Kỹ thuật trưởng" : "Chọn nhân viên xử lý"} value={handlerId} onChange={(e) => setHandlerId(e.target.value)}>
             <option value="">— Chọn —</option>
             {handlers.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
           </SelectField>
