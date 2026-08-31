@@ -15,7 +15,7 @@ import {
 // ---------------------------------------------------------------------------
 // Bảng màu dùng chung cho biểu đồ (đồng bộ với bảng màu giao diện teal/amber/...)
 // ---------------------------------------------------------------------------
-const CHART_COLORS = ["#0f766e", "#d97706", "#4f46e5", "#e11d48", "#0891b2", "#65a30d", "#9333ea", "#ea580c"];
+const CHART_COLORS = ["#465fff", "#0ba5ec", "#12b76a", "#f79009", "#f04438", "#7a5af8", "#ee46bc", "#fb6514"];
 const CHART_TOOLTIP_STYLE = {
   contentStyle: { borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 4px 16px rgba(15,23,42,.08)", fontSize: 12.5 },
   labelStyle: { color: "#334155", fontWeight: 600, marginBottom: 4 },
@@ -902,17 +902,17 @@ function StatusBadge({ status }) {
 }
 
 function Card({ children, className = "", ...rest }) {
-  return <div className={`bg-white/90 backdrop-blur rounded-3xl border border-white shadow-sm shadow-sky-900/5 hover:shadow-md transition-shadow duration-200 ${className}`} {...rest}>{children}</div>;
+  return <div className={`bg-white rounded-2xl border border-slate-200 ${className}`} {...rest}>{children}</div>;
 }
 
 function SectionTitle({ icon: Icon, title, subtitle }) {
   return (
     <div className="flex items-start gap-3 mb-4">
-      <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shrink-0 shadow-sm shadow-sky-900/10 text-sky-700">
+      <div className="w-11 h-11 rounded-xl bg-brand-50 flex items-center justify-center shrink-0 text-brand-500">
         <Icon size={20} />
       </div>
       <div>
-        <h2 className="text-xl font-bold text-slate-800 tracking-tight">{title}</h2>
+        <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
         {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
       </div>
     </div>
@@ -932,20 +932,21 @@ function EmptyState({ icon: Icon, text }) {
 
 function MetricCard({ label, value, icon: Icon, accent = "teal" }) {
   const accents = {
-    teal: { text: "text-teal-600", bg: "bg-teal-50" },
-    amber: { text: "text-amber-500", bg: "bg-amber-50" },
+    teal: { text: "text-brand-500", bg: "bg-brand-50" },
+    amber: { text: "text-warning-500", bg: "bg-warning-50" },
     indigo: { text: "text-indigo-500", bg: "bg-indigo-50" },
-    rose: { text: "text-rose-500", bg: "bg-rose-50" },
+    rose: { text: "text-error-500", bg: "bg-error-50" },
   };
   const a = accents[accent] || accents.teal;
   return (
-    <div className="relative bg-white/90 backdrop-blur rounded-3xl border border-white shadow-sm shadow-sky-900/5 hover:shadow-md transition-shadow duration-200 p-5 overflow-hidden">
-      <div className={`absolute -right-3 -bottom-3 w-20 h-20 rounded-full ${a.bg} opacity-70`} />
-      <div className="relative">
-        <p className="text-sm text-slate-500">{label}</p>
-        <p className="text-2xl font-bold text-slate-800 truncate tracking-tight mt-1">{value}</p>
+    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+      <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${a.bg} ${a.text}`}>
+        <Icon size={22} />
       </div>
-      <div className={`absolute right-4 top-4 ${a.text}`}><Icon size={22} /></div>
+      <div className="mt-4">
+        <p className="text-sm text-slate-500">{label}</p>
+        <p className="text-2xl font-bold text-slate-800 truncate mt-1">{value}</p>
+      </div>
     </div>
   );
 }
@@ -956,7 +957,7 @@ function TextField({ label, ...props }) {
       <span className="block text-xs font-medium text-slate-600 mb-1">{label}</span>
       <input
         {...props}
-        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm shadow-theme-xs transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
       />
     </label>
   );
@@ -1038,7 +1039,7 @@ function MoneyField({ label, value, onChange, placeholder = "0" }) {
         value={displayValue}
         onChange={handleChange}
         placeholder={placeholder}
-        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm shadow-theme-xs transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
       />
       {words && <span className="block text-[11px] text-slate-400 mt-1 italic">{words}</span>}
     </label>
@@ -1052,7 +1053,7 @@ function SelectField({ label, children, ...props }) {
       <span className="block text-xs font-medium text-slate-600 mb-1">{label}</span>
       <select
         {...props}
-        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm shadow-theme-xs bg-white transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
       >
         {children}
       </select>
@@ -1067,7 +1068,7 @@ function TextAreaField({ label, ...props }) {
       <textarea
         {...props}
         rows={2}
-        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm shadow-theme-xs transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
       />
     </label>
   );
@@ -1077,7 +1078,7 @@ function PrimaryButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-gradient-to-b from-sky-500 to-sky-600 text-white text-sm font-semibold shadow-sm shadow-sky-900/20 hover:from-sky-600 hover:to-sky-700 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+      className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-brand-500 text-white text-sm font-medium shadow-theme-xs hover:bg-brand-600 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
     >
       {children}
     </button>
@@ -1087,7 +1088,7 @@ function GhostButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-300 bg-white text-slate-700 text-sm font-medium hover:bg-slate-50 hover:border-slate-400 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
+      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-medium shadow-theme-xs hover:bg-slate-50 hover:text-slate-800 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
     >
       {children}
     </button>
@@ -1097,7 +1098,7 @@ function DangerButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-rose-300 bg-white text-rose-700 text-sm font-medium hover:bg-rose-50 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
+      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-error-300 bg-white text-error-600 text-sm font-medium shadow-theme-xs hover:bg-error-50 active:scale-[0.98] transition disabled:opacity-40 ${className}`}
     >
       {children}
     </button>
@@ -2107,14 +2108,14 @@ export default function App() {
   const navGroups = NAV_GROUPS[currentUser.role];
 
   return (
-    <div className="min-h-[600px] bg-gradient-to-b from-sky-100 via-sky-50 to-white">
+    <div className="min-h-[600px] bg-slate-50">
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} .no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none} @keyframes highlightPulse{0%,100%{box-shadow:0 0 0 0 rgba(2,132,199,0)}15%{box-shadow:0 0 0 4px rgba(2,132,199,.45)}} .highlight-order{animation:highlightPulse 1.6s ease-out 2}`}</style>
       <UrgentAnnouncementModal currentUser={currentUser} announcements={announcements} />
       {/* top bar */}
-      <div className="bg-white/70 backdrop-blur border-b border-white sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-2xl bg-white flex items-center justify-center shrink-0 shadow-sm shadow-sky-900/10 text-sky-700">
+            <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center shrink-0 text-white">
               <TrendingUp size={18} />
             </div>
             <div className="min-w-0">
@@ -2129,7 +2130,7 @@ export default function App() {
             </GhostButton>
             <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} onGoToOrder={goToOrder} />
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-sky-600 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-sm">
+              <div className="w-8 h-8 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-semibold shrink-0">
                 {currentUser.name.split(" ").slice(-1)[0][0]}
               </div>
               <div className="hidden md:block text-right leading-tight">
@@ -2151,18 +2152,18 @@ export default function App() {
         {/* Sidebar điều hướng — hiển thị bên trái trên máy tính/tablet ngang */}
         <aside className="hidden lg:block w-60 shrink-0 sticky top-24 space-y-3">
           {navGroups.map((group, gi) => (
-            <div key={gi} className="bg-white/70 backdrop-blur rounded-2xl p-2 space-y-1">
+            <div key={gi} className="bg-white rounded-2xl border border-slate-200 p-2 space-y-1">
               {group.map((n) => (
                 <button
                   key={n.key}
                   onClick={() => setTab(n.key)}
-                  className={`w-full flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-left ${
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition text-left ${
                     tab === n.key
-                      ? "bg-gradient-to-b from-sky-500 to-sky-600 text-white shadow-sm shadow-sky-900/20"
-                      : "text-slate-500 hover:bg-white hover:text-slate-700"
+                      ? "bg-brand-50 text-brand-500"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-700"
                   }`}
                 >
-                  <n.icon size={16} className="shrink-0" /> {n.label}
+                  <n.icon size={17} className="shrink-0" /> {n.label}
                 </button>
               ))}
             </div>
@@ -2223,8 +2224,8 @@ export default function App() {
                 <button
                   key={n.key}
                   onClick={() => setTab(n.key)}
-                  className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[10.5px] font-medium whitespace-nowrap shrink-0 transition ${
-                    tab === n.key ? "text-sky-600" : "text-slate-400"
+                  className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-[10.5px] font-medium whitespace-nowrap shrink-0 transition ${
+                    tab === n.key ? "bg-brand-50 text-brand-500" : "text-slate-400"
                   }`}
                 >
                   <n.icon size={18} />
@@ -2490,7 +2491,7 @@ function AnnouncementForm({ initial, onSubmit, onCancel, saving }) {
             onChange={(e) => setContent(e.target.value)}
             rows={5}
             placeholder="Nội dung hướng dẫn / thông báo chi tiết..."
-            className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+            className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm shadow-theme-xs transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
           />
           <span className="block text-[11px] text-slate-400 mt-1">Mẹo: gõ **chữ cần nhấn mạnh** (2 dấu sao 2 bên) để tự động in đậm, tô đỏ khi hiển thị.</span>
         </label>
@@ -3018,15 +3019,15 @@ function RevenueTrendChart({ orders, title = "Xu hướng doanh thu 6 tháng g�
             <AreaChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0f766e" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="#0f766e" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#465fff" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#465fff" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
               <YAxis tickFormatter={shortMoney} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={48} />
               <Tooltip formatter={(v) => fmtMoney(v)} {...CHART_TOOLTIP_STYLE} />
-              <Area type="monotone" dataKey="revenue" stroke="#0f766e" strokeWidth={2.5} fill="url(#revenueFill)" name="Doanh thu" />
+              <Area type="monotone" dataKey="revenue" stroke="#465fff" strokeWidth={2.5} fill="url(#revenueFill)" name="Doanh thu" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -3100,9 +3101,9 @@ function DaiSuBaoCao({ currentUser, orders }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-3xl bg-gradient-to-br from-sky-100 to-sky-50 border border-white p-5">
-        <p className="text-lg font-bold text-sky-800">{greeting}, {currentUser.name.split(" ").slice(-1)[0]}!</p>
-        <p className="text-sm text-sky-700/80 mt-1">Đây là tổng quan doanh thu, hoa hồng và xếp hạng của bạn.</p>
+      <div className="rounded-2xl bg-brand-50 border border-brand-100 p-5">
+        <p className="text-lg font-semibold text-brand-700">{greeting}, {currentUser.name.split(" ").slice(-1)[0]}!</p>
+        <p className="text-sm text-brand-600/80 mt-1">Đây là tổng quan doanh thu, hoa hồng và xếp hạng của bạn.</p>
       </div>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <SectionTitle
@@ -3122,7 +3123,7 @@ function DaiSuBaoCao({ currentUser, orders }) {
               <select
                 value={viewCompany}
                 onChange={(e) => setViewCompany(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm shadow-theme-xs bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
               >
                 <option value="">— Tất cả (toàn tập đoàn) —</option>
                 {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
@@ -3591,7 +3592,7 @@ function XuLyDonHang({ currentUser, orders }) {
             value={phoneQuery}
             onChange={(e) => setPhoneQuery(e.target.value)}
             placeholder="Lọc theo SĐT..."
-            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+            className="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-300 text-sm shadow-theme-xs transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
           />
         </div>
         {isAdmin && (
@@ -3599,7 +3600,7 @@ function XuLyDonHang({ currentUser, orders }) {
             <select
               value={storeFilter}
               onChange={(e) => setStoreFilter(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm bg-white transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+              className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm shadow-theme-xs bg-white transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
             >
               <option value="">— Tất cả chi nhánh —</option>
               {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
@@ -3854,7 +3855,7 @@ function ChtBaoCao({ currentUser, orders }) {
               <select
                 value={viewCompany}
                 onChange={(e) => setViewCompany(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm shadow-theme-xs bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400"
               >
                 <option value="">— Tất cả (toàn tập đoàn) —</option>
                 {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
