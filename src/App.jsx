@@ -2082,6 +2082,9 @@ export default function App() {
     { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
     { key: "lich_su", label: "Lịch sử", icon: Wallet },
   ];
+  const GROUP_BAO_CAO_CTY = [
+    { key: "bao_cao_cty", label: "Báo cáo công ty", icon: Landmark },
+  ];
   const GROUP_THONG_BAO = [
     { key: "thong_bao", label: "Thông báo", icon: Megaphone },
   ];
@@ -2099,7 +2102,7 @@ export default function App() {
     ke_toan_bao_hiem: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
     ke_toan_dich_vu: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
     ke_toan_kho: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
-    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN, GROUP_THONG_BAO, GROUP_TAI_KHOAN],
+    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN, GROUP_BAO_CAO_CTY, GROUP_THONG_BAO, GROUP_TAI_KHOAN],
   };
   const navGroups = NAV_GROUPS[currentUser.role];
 
@@ -2191,6 +2194,8 @@ export default function App() {
           <KeToanChoXacNhan currentUser={currentUser} orders={orders} onConfirm={confirmPayment} onReject={rejectPayment} />
         )}
         {tab === "lich_su" && <KeToanLichSu currentUser={currentUser} orders={orders} />}
+
+        {tab === "bao_cao_cty" && currentUser.role === "admin" && <BaoCaoCongTy orders={orders} />}
 
         {tab === "thong_bao" && (
           <AnnouncementsPage
@@ -3194,6 +3199,216 @@ function DaiSuBaoCao({ currentUser, orders }) {
         )}
         <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.product} title="Xếp hạng theo sản phẩm" icon={ShoppingBag} />
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// BÁO CÁO DOANH THU THEO TỪNG CÔNG TY (dành cho Admin)
+// ---------------------------------------------------------------------------
+
+function BaoCaoCongTy({ orders }) {
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [selectedCompany, setSelectedCompany] = useState("");
+
+  // Lọc đơn theo khoảng thời gian (dựa trên ngày cập nhật cuối / ngày tạo)
+  const inRange = (o) => {
+    const d = new Date(o.updatedAt || o.createdAt);
+    if (fromDate && d < new Date(fromDate)) return false;
+    if (toDate && d > new Date(toDate + "T23:59:59")) return false;
+    return true;
+  };
+  const filtered = orders.filter(inRange);
+  const paid = filtered.filter((o) => o.status === "da_thanh_toan");
+
+  // Tổng hợp doanh thu, hoa hồng, số đơn và điểm TD cho từng khối công ty
+  const companyRows = COMPANIES.map((c) => {
+    const companyPaid = paid.filter((o) => o.company === c.name);
+    const revenue = companyPaid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount ?? 0), 0);
+    const commission = companyPaid.reduce((s, o) => s + (o.commissionAmount || 0), 0);
+    return { name: c.name, code: COMPANY_CODE[c.name] || c.name, revenue, commission, count: companyPaid.length, td: computeTD(companyPaid) };
+  });
+  const totalRevenue = companyRows.reduce((s, r) => s + r.revenue, 0);
+  const totalCount = companyRows.reduce((s, r) => s + r.count, 0);
+  const ranked = [...companyRows].sort((a, b) => b.revenue - a.revenue);
+  const best = ranked[0];
+  const maxRevenue = best?.revenue || 0;
+
+  const chartData = companyRows.map((r) => ({ name: r.code, revenue: r.revenue }));
+
+  const detailOrders = selectedCompany ? filtered.filter((o) => o.company === selectedCompany) : [];
+  const detailPaid = detailOrders.filter((o) => o.status === "da_thanh_toan");
+  const detailRevenue = detailPaid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount ?? 0), 0);
+  const detailCommission = detailPaid.reduce((s, o) => s + (o.commissionAmount || 0), 0);
+
+  const rangeLabel = fromDate || toDate
+    ? `Từ ${fromDate ? fmtDate(fromDate).split(" ")[0] : "đầu"} đến ${toDate ? fmtDate(toDate).split(" ")[0] : "nay"}`
+    : "Toàn bộ thời gian";
+
+  const handleExport = () => {
+    const pct = (r) => (totalRevenue > 0 ? Math.round((r.revenue / totalRevenue) * 1000) / 10 : 0);
+    const sheets = [
+      {
+        name: "Tong hop theo cong ty",
+        rows: [
+          ...ranked.map((r, i) => ({ "Hạng": i + 1, "Khối công ty": r.name, "Mã": r.code, "Doanh thu": r.revenue, "Hoa hồng": r.commission, "Số đơn thành công": r.count, "Tỉ trọng (%)": pct(r), "Điểm TD": r.td })),
+          { "Hạng": "", "Khối công ty": "TỔNG CỘNG", "Mã": "", "Doanh thu": totalRevenue, "Hoa hồng": ranked.reduce((s, r) => s + r.commission, 0), "Số đơn thành công": totalCount, "Tỉ trọng (%)": totalRevenue > 0 ? 100 : 0, "Điểm TD": "" },
+        ],
+      },
+      {
+        name: "Theo chi nhanh",
+        rows: COMPANIES.flatMap((c) =>
+          buildRevenueLeaderboard(paid.filter((o) => o.company === c.name), (o) => o.store)
+            .map((r) => ({ "Khối công ty": c.name, "Chi nhánh / cửa hàng": r.name, "Doanh thu": r.revenue, "Số đơn": r.count }))
+        ),
+      },
+      {
+        name: "Theo san pham",
+        rows: COMPANIES.flatMap((c) =>
+          buildRevenueLeaderboard(paid.filter((o) => o.company === c.name), (o) => o.product)
+            .map((r) => ({ "Khối công ty": c.name, "Sản phẩm": r.name, "Doanh thu": r.revenue, "Số đơn": r.count }))
+        ),
+      },
+    ];
+    exportToExcel(sheets, `BaoCaoDoanhThuCongTy_${Date.now()}.xlsx`);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <SectionTitle icon={Landmark} title="Báo cáo doanh thu theo từng công ty" subtitle={rangeLabel} />
+        <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
+      </div>
+
+      <Card className="p-4">
+        <p className="font-semibold text-slate-800 text-sm mb-1">Khoảng thời gian báo cáo</p>
+        <p className="text-xs text-slate-500 mb-3">Bỏ trống nếu muốn thống kê toàn bộ dữ liệu từ trước đến nay.</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <TextField label="Từ ngày" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          <TextField label="Đến ngày" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          {(fromDate || toDate) && (
+            <GhostButton onClick={() => { setFromDate(""); setToDate(""); }}>Xoá lọc</GhostButton>
+          )}
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <MetricCard label="Tổng doanh thu toàn tập đoàn" value={fmtMoney(totalRevenue)} icon={TrendingUp} accent="teal" />
+        <MetricCard label="Tổng đơn thành công" value={totalCount} icon={ShoppingBag} accent="indigo" />
+        <MetricCard label="Công ty dẫn đầu" value={best && best.revenue > 0 ? best.code : "—"} icon={Award} accent="amber" />
+        <MetricCard label="Doanh thu dẫn đầu" value={best && best.revenue > 0 ? fmtMoney(best.revenue) : "—"} icon={Wallet} accent="rose" />
+      </div>
+
+      <Card className="p-4 sm:p-5">
+        <SectionTitle icon={BarChart3} title="So sánh doanh thu giữa các khối công ty" />
+        {totalRevenue === 0 ? (
+          <EmptyState icon={BarChart3} text="Chưa có doanh thu trong khoảng thời gian này." />
+        ) : (
+          <div style={{ width: "100%", height: 240 }}>
+            <ResponsiveContainer>
+              <BarChart data={chartData} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={shortMoney} tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={52} />
+                <Tooltip formatter={(v) => fmtMoney(v)} {...CHART_TOOLTIP_STYLE} />
+                <Bar dataKey="revenue" name="Doanh thu" radius={[8, 8, 0, 0]}>
+                  {chartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-0 overflow-hidden">
+        <div className="p-4 border-b border-slate-100">
+          <p className="font-semibold text-slate-800 text-sm">Bảng tổng hợp doanh thu theo công ty</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-400 border-b border-slate-100">
+                <th className="px-4 py-2.5 font-medium">#</th>
+                <th className="px-4 py-2.5 font-medium">Khối công ty</th>
+                <th className="px-4 py-2.5 font-medium text-right">Doanh thu</th>
+                <th className="px-4 py-2.5 font-medium text-right">Hoa hồng</th>
+                <th className="px-4 py-2.5 font-medium text-right">Số đơn</th>
+                <th className="px-4 py-2.5 font-medium w-40">Tỉ trọng</th>
+                <th className="px-4 py-2.5 font-medium text-right">Điểm TD</th>
+                <th className="px-4 py-2.5" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {ranked.map((r, i) => {
+                const share = totalRevenue > 0 ? (r.revenue / totalRevenue) * 100 : 0;
+                return (
+                  <tr key={r.name} className={selectedCompany === r.name ? "bg-teal-50/60" : "hover:bg-slate-50/60"}>
+                    <td className="px-4 py-3 text-slate-400 font-medium">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-800">{r.code}</p>
+                      <p className="text-xs text-slate-400">{r.name}</p>
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold text-slate-800 whitespace-nowrap">{fmtMoney(r.revenue)}</td>
+                    <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{fmtMoney(r.commission)}</td>
+                    <td className="px-4 py-3 text-right text-slate-600">{r.count}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full rounded-full bg-gradient-to-r from-teal-500 to-teal-600" style={{ width: `${maxRevenue > 0 ? (r.revenue / maxRevenue) * 100 : 0}%` }} />
+                        </div>
+                        <span className="text-xs text-slate-500 w-11 text-right">{share.toFixed(1)}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-600">{r.td.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => setSelectedCompany(selectedCompany === r.name ? "" : r.name)}
+                        className="text-xs font-medium text-teal-700 hover:underline whitespace-nowrap"
+                      >
+                        {selectedCompany === r.name ? "Ẩn chi tiết" : "Xem chi tiết"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-slate-200 bg-slate-50/60">
+                <td className="px-4 py-3" />
+                <td className="px-4 py-3 font-semibold text-slate-800">Tổng cộng</td>
+                <td className="px-4 py-3 text-right font-bold text-teal-700 whitespace-nowrap">{fmtMoney(totalRevenue)}</td>
+                <td className="px-4 py-3 text-right font-semibold text-slate-700 whitespace-nowrap">{fmtMoney(ranked.reduce((s, r) => s + r.commission, 0))}</td>
+                <td className="px-4 py-3 text-right font-semibold text-slate-700">{totalCount}</td>
+                <td className="px-4 py-3" colSpan={3} />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </Card>
+
+      {selectedCompany && (
+        <div className="space-y-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <SectionTitle icon={Building2} title={`Chi tiết — ${selectedCompany}`} subtitle={rangeLabel} />
+            <GhostButton onClick={() => setSelectedCompany("")}>Đóng chi tiết</GhostButton>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <MetricCard label="Doanh thu" value={fmtMoney(detailRevenue)} icon={TrendingUp} accent="teal" />
+            <MetricCard label="Hoa hồng" value={fmtMoney(detailCommission)} icon={Wallet} accent="amber" />
+            <MetricCard label="Đơn thành công" value={detailPaid.length} icon={ClipboardCheck} accent="indigo" />
+            <MetricCard label="Điểm TD" value={computeTD(detailPaid).toFixed(1)} icon={Award} accent="rose" />
+          </div>
+          <div className="grid lg:grid-cols-2 gap-5">
+            <LeaderBoard orders={detailOrders} groupKeyFn={(o) => o.store} title="Doanh thu theo chi nhánh / cửa hàng" icon={Store} />
+            <LeaderBoard orders={detailOrders} groupKeyFn={(o) => o.product} title="Doanh thu theo sản phẩm" icon={ShoppingBag} />
+          </div>
+          <div className="grid lg:grid-cols-2 gap-5">
+            <RevenueTrendChart orders={detailOrders} title={`Xu hướng doanh thu — ${COMPANY_CODE[selectedCompany] || selectedCompany}`} />
+            <GunghoLeaderBoard orders={detailOrders} groupKeyFn={(o) => o.createdByName} title="Xếp hạng nhân viên (điểm TD)" icon={Award} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
