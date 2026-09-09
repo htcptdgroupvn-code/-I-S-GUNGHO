@@ -2292,7 +2292,7 @@ function NotifBell({ notifications, currentUser, onMarkRead, onGoToOrder }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-lg z-20">
+          <div className="fixed left-1/2 -translate-x-1/2 top-16 w-[92vw] max-w-sm lg:absolute lg:left-auto lg:translate-x-0 lg:right-0 lg:top-auto lg:mt-2 lg:w-80 max-h-96 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-lg z-20">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
               <p className="text-sm font-semibold text-slate-800">Thông báo</p>
               {unread > 0 && (
@@ -2947,12 +2947,11 @@ export default function App() {
       <div className="flex-1 min-w-0 flex flex-col">
         {/* top bar */}
         <div className="bg-white border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-          <div className="px-4 py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0 lg:hidden">
+          <div className="px-4 py-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 lg:hidden shrink">
               <img src="/logo.jpg" alt="Logo" className="w-8 h-8 rounded-full bg-white border border-slate-200 object-contain shrink-0" />
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
-                <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
+                <p className="text-sm font-bold text-slate-800 leading-tight tracking-tight truncate">GUNGHO PTD</p>
               </div>
             </div>
             <div className="hidden lg:block min-w-0">
@@ -2960,19 +2959,7 @@ export default function App() {
               <p className="text-[11px] text-slate-400 leading-tight">{currentUser.store || ""}</p>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {myCompanies.length > 1 && (
-                <select
-                  value={activeCompany}
-                  onChange={(e) => setActiveCompany(e.target.value)}
-                  title="Bạn được cấp quyền xem nhiều công ty — chọn công ty muốn xem"
-                  className="text-xs rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 font-medium px-2 py-1.5 max-w-[160px] focus:outline-none"
-                >
-                  {myCompanies.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              )}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <GhostButton onClick={refreshAll} className="!px-2.5" title="Làm mới dữ liệu">
                 <RefreshCw size={14} />
               </GhostButton>
@@ -2994,6 +2981,20 @@ export default function App() {
               </div>
             </div>
           </div>
+          {myCompanies.length > 1 && (
+            <div className="px-4 pb-2.5">
+              <select
+                value={activeCompany}
+                onChange={(e) => setActiveCompany(e.target.value)}
+                title="Bạn được cấp quyền xem nhiều công ty — chọn công ty muốn xem"
+                className="w-full lg:w-auto lg:max-w-[260px] text-xs rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 font-medium px-2 py-1.5 focus:outline-none"
+              >
+                {myCompanies.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-0 px-4 py-6 pb-24 lg:pb-6 max-w-6xl w-full mx-auto lg:mx-0">
