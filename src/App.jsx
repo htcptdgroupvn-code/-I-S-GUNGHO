@@ -5030,11 +5030,6 @@ function ChtBaoCao({ currentUser, orders }) {
       {showDetail && (
         <div className="space-y-5">
           <div className="grid lg:grid-cols-2 gap-5">
-            <RevenueTrendChart orders={viewOrders} title={viewCompany ? `Xu hướng doanh thu — ${viewCompany}` : "Xu hướng doanh thu 6 tháng gần đây (toàn tập đoàn)"} />
-            <ProductMixPieChart orders={viewOrders} title={viewCompany ? `Tỉ trọng sản phẩm — ${viewCompany}` : "Tỉ trọng doanh thu theo sản phẩm (toàn tập đoàn)"} />
-          </div>
-
-          <div className="grid lg:grid-cols-2 gap-5">
             {viewCompany ? (
               <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.store} title={`Xếp hạng theo cửa hàng / chi nhánh — ${viewCompany}`} icon={Store} />
             ) : (
