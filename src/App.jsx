@@ -2321,40 +2321,70 @@ function AdminAccountsPage({ currentUser, employees, onRefresh }) {
       {filtered.length === 0 ? (
         <EmptyState icon={Search} text="Không tìm thấy tài khoản phù hợp." />
       ) : (
-        <div className="space-y-2">
-          {filtered.map((e) => (
-            <Card key={e.id} className={`p-3.5 flex items-center justify-between gap-3 flex-wrap ${e.accountDisabled ? "opacity-60" : ""}`}>
-              <div className="min-w-0 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-semibold shrink-0">
-                  {e.name && e.name.trim() ? e.name.trim().split(" ").slice(-1)[0][0] : "?"}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">
-                    {e.name} <span className="text-slate-400 font-normal">({e.employeeCode})</span>
-                    {e.accountDisabled && <Badge className="ml-1.5 bg-rose-50 text-rose-700 border-rose-200">Đã khoá</Badge>}
-                    {e.visibleCompanies?.length > 1 && <Badge className="ml-1.5 bg-indigo-50 text-indigo-700 border-indigo-200">{e.visibleCompanies.length} công ty</Badge>}
-                  </p>
-                  <p className="text-xs text-slate-400 truncate">{ROLE_META[e.role]?.short || e.role} {e.store ? `· ${e.store}` : ""}{e.mustChangePassword ? " · Đang chờ đổi mật khẩu" : ""}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <GhostButton className="!text-xs" onClick={() => setEditing(e)}>
-                  <Pencil size={13} /> Sửa
-                </GhostButton>
-                <GhostButton className="!text-xs" onClick={() => setResetting(e)}>
-                  <Lock size={13} /> Đặt lại mật khẩu
-                </GhostButton>
-                <GhostButton className="!text-xs" onClick={() => setStatusTarget({ employee: e, disabled: !e.accountDisabled })}>
-                  {e.accountDisabled ? <ShieldCheck size={13} /> : <Lock size={13} />} {e.accountDisabled ? "Mở khoá" : "Khoá"}
-                </GhostButton>
-                {e.id !== currentUser.id && (
-                  <button onClick={() => { setDeleteError(""); setDeleteTarget(e); }} className="text-xs text-rose-600 hover:text-rose-800 px-2 py-1.5 flex items-center gap-1">
-                    <Trash2 size={13} /> Xoá
-                  </button>
-                )}
-              </div>
-            </Card>
-          ))}
+        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Mã nhân viên</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Họ và tên</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Chi nhánh</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Vai trò</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Trạng thái</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((e) => (
+                  <tr key={e.id} className={e.accountDisabled ? "opacity-60" : ""}>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-600 font-mono text-xs">{e.employeeCode}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+                          {e.name && e.name.trim() ? e.name.trim().split(" ").slice(-1)[0][0] : "?"}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-slate-800 truncate">{e.name}{e.id === currentUser.id && <span className="text-slate-400 font-normal"> (bạn)</span>}</p>
+                          {e.mustChangePassword && <p className="text-[11px] text-amber-600">Đang chờ đổi mật khẩu</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-600">
+                      {e.store || "—"}
+                      {e.visibleCompanies?.length > 1 && <Badge className="ml-1.5 bg-indigo-50 text-indigo-700 border-indigo-200">{e.visibleCompanies.length} công ty</Badge>}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <Badge className={ROLE_META[e.role]?.color || "bg-slate-50 text-slate-700 border-slate-200"}>{ROLE_META[e.role]?.short || e.role}</Badge>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {e.accountDisabled ? (
+                        <Badge className="bg-rose-50 text-rose-700 border-rose-200">Đã khoá</Badge>
+                      ) : (
+                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Hoạt động</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5 text-xs">
+                        <button onClick={() => setEditing(e)} className="text-indigo-700 hover:underline">Sửa</button>
+                        <span className="text-slate-300">|</span>
+                        <button onClick={() => setResetting(e)} className="text-indigo-700 hover:underline">Đặt lại MK</button>
+                        <span className="text-slate-300">|</span>
+                        <button onClick={() => setStatusTarget({ employee: e, disabled: !e.accountDisabled })} className="text-indigo-700 hover:underline">
+                          {e.accountDisabled ? "Mở khoá" : "Khoá"}
+                        </button>
+                        {e.id !== currentUser.id && (
+                          <>
+                            <span className="text-slate-300">|</span>
+                            <button onClick={() => { setDeleteError(""); setDeleteTarget(e); }} className="text-rose-600 hover:underline">Xoá</button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
       {resetting && (
