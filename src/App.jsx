@@ -90,6 +90,22 @@ const COMPANIES = [
 const ALL_BRANCHES = COMPANIES.flatMap((c) => c.branches.map((b) => ({ ...b, company: c.name })));
 const branchInfo = (name) => ALL_BRANCHES.find((b) => b.name === name);
 
+// ---------------------------------------------------------------------------
+// Cách ly dữ liệu theo công ty (5 công ty) — mỗi tài khoản mặc định chỉ thấy
+// đúng công ty của chi nhánh (store) mình đang gắn. Muốn 1 tài khoản xem được
+// nhiều công ty (liên kết sau này), gán mảng visible_companies cho tài khoản đó
+// trong Supabase (bảng employees) — không ảnh hưởng các tài khoản khác.
+// ---------------------------------------------------------------------------
+function companyOfStore(storeName) {
+  return branchInfo(storeName)?.company || null;
+}
+function allowedCompaniesFor(user) {
+  if (!user) return [];
+  if (Array.isArray(user.visibleCompanies) && user.visibleCompanies.length > 0) return user.visibleCompanies;
+  const own = companyOfStore(user.store);
+  return own ? [own] : [];
+}
+
 // Phân loại sản phẩm theo công thức tính điểm bình xét thi đua Gung Ho
 const PRODUCT_CATEGORY = {
   "Bảo hiểm xe máy": "BX",
@@ -767,6 +783,10 @@ function mapEmployee(e) {
   return {
     id: e.id, employeeCode: e.employee_code, name: e.name, role: e.role, store: e.store, position: e.position, phone: e.phone || "",
     mustChangePassword: !!e.must_change_password, passwordChangeDeadline: e.password_change_deadline || null,
+    // Danh sách công ty (trong 5 công ty) mà tài khoản này được phép xem — null/rỗng
+    // nghĩa là chỉ xem đúng công ty của chi nhánh (store) mình đang gắn. Dùng để
+    // "liên kết" nhiều công ty cho 1 tài khoản sau này (VD: bạn — chủ tất cả 5 công ty).
+    visibleCompanies: Array.isArray(e.visible_companies) && e.visible_companies.length > 0 ? e.visible_companies : null,
   };
 }
 function mapCustomer(c) {
@@ -1591,7 +1611,8 @@ export default function App() {
   const [tab, setTab] = useState(null);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
-  const [, forceRerender] = useState(0);
+  const [rerenderTick, forceRerender] = useState(0);
+  const [activeCompany, setActiveCompany] = useState("");
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -1646,6 +1667,31 @@ export default function App() {
     const defaults = { dai_su: "khach_hang", xu_ly: "duoc_giao", cht: "phan_cong", ke_toan: "cho_xac_nhan", admin: "bao_cao_cht" };
     setTab(defaults[currentUser.role]);
   }, [currentUser]);
+
+  // ---- Cách ly dữ liệu theo công ty ------------------------------------
+  const myCompanies = useMemo(() => allowedCompaniesFor(currentUser), [currentUser]);
+  // Nếu tài khoản được gán nhiều công ty, mặc định chọn công ty đầu tiên; nếu
+  // chỉ có 1 công ty thì không cần ô chọn (activeCompany rỗng = dùng cả myCompanies).
+  useEffect(() => {
+    if (myCompanies.length > 1 && !myCompanies.includes(activeCompany)) setActiveCompany(myCompanies[0]);
+    if (myCompanies.length <= 1) setActiveCompany("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myCompanies]);
+  const effectiveCompanies = myCompanies.length > 1 && activeCompany ? [activeCompany] : myCompanies;
+  const scopedOrders = useMemo(
+    () => (effectiveCompanies.length ? orders.filter((o) => effectiveCompanies.includes(o.company)) : orders),
+    [orders, effectiveCompanies.join("|")]
+  );
+  const scopedEmployees = useMemo(
+    () => (effectiveCompanies.length ? USERS.filter((u) => effectiveCompanies.includes(companyOfStore(u.store))) : USERS),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [effectiveCompanies.join("|"), rerenderTick]
+  );
+  const scopedCustomers = useMemo(() => {
+    if (!effectiveCompanies.length) return customers;
+    const allowedCreators = new Set(scopedEmployees.map((u) => u.id));
+    return customers.filter((c) => allowedCreators.has(c.createdBy));
+  }, [customers, scopedEmployees]);
 
   const handleLogin = (employee) => {
     setCurrentUser(employee);
@@ -2124,6 +2170,18 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {myCompanies.length > 1 && (
+              <select
+                value={activeCompany}
+                onChange={(e) => setActiveCompany(e.target.value)}
+                title="Bạn được cấp quyền xem nhiều công ty — chọn công ty muốn xem"
+                className="text-xs rounded-lg border border-sky-300 bg-sky-50 text-sky-800 font-medium px-2 py-1.5 max-w-[160px] focus:outline-none"
+              >
+                {myCompanies.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
             <GhostButton onClick={refreshAll} className="!px-2.5" title="Làm mới dữ liệu">
               <RefreshCw size={14} />
             </GhostButton>
@@ -2172,30 +2230,30 @@ export default function App() {
         <div className="flex-1 min-w-0 pb-24 lg:pb-0">
         <TabErrorBoundary resetKey={tab}>
         {tab === "khach_hang" && (
-          <DaiSuKhachHang currentUser={currentUser} customers={customers} orders={orders} onAdd={addCustomer} />
+          <DaiSuKhachHang currentUser={currentUser} customers={scopedCustomers} orders={scopedOrders} onAdd={addCustomer} />
         )}
         {tab === "don_hang_ds" && (
-          <DaiSuDonHang currentUser={currentUser} customers={customers} orders={orders} onCreate={createOrder} />
+          <DaiSuDonHang currentUser={currentUser} customers={scopedCustomers} orders={scopedOrders} onCreate={createOrder} />
         )}
-        {tab === "bao_cao_ds" && <DaiSuBaoCao currentUser={currentUser} orders={orders} />}
+        {tab === "bao_cao_ds" && <DaiSuBaoCao currentUser={currentUser} orders={scopedOrders} />}
 
         {tab === "duoc_giao" && (
-          <XuLyDuocGiao currentUser={currentUser} orders={orders} onConfirm={confirmHandling} onForward={forwardToAccounting} onDecline={declineOrder} />
+          <XuLyDuocGiao currentUser={currentUser} orders={scopedOrders} onConfirm={confirmHandling} onForward={forwardToAccounting} onDecline={declineOrder} />
         )}
-        {tab === "don_hang_cskh" && <XuLyDonHang currentUser={currentUser} orders={orders} />}
-        {tab === "bao_cao_cskh" && <XuLyBaoCao currentUser={currentUser} orders={orders} />}
+        {tab === "don_hang_cskh" && <XuLyDonHang currentUser={currentUser} orders={scopedOrders} />}
+        {tab === "bao_cao_cskh" && <XuLyBaoCao currentUser={currentUser} orders={scopedOrders} />}
 
         {tab === "phan_cong" && (
-          <ChtPhanCong currentUser={currentUser} orders={orders} onAssign={assignHandler} />
+          <ChtPhanCong currentUser={currentUser} orders={scopedOrders} onAssign={assignHandler} />
         )}
-        {tab === "bao_cao_cht" && <ChtBaoCao currentUser={currentUser} orders={orders} />}
+        {tab === "bao_cao_cht" && <ChtBaoCao currentUser={currentUser} orders={scopedOrders} />}
 
         {tab === "cho_xac_nhan" && (
-          <KeToanChoXacNhan currentUser={currentUser} orders={orders} onConfirm={confirmPayment} onReject={rejectPayment} />
+          <KeToanChoXacNhan currentUser={currentUser} orders={scopedOrders} onConfirm={confirmPayment} onReject={rejectPayment} />
         )}
-        {tab === "lich_su" && <KeToanLichSu currentUser={currentUser} orders={orders} />}
+        {tab === "lich_su" && <KeToanLichSu currentUser={currentUser} orders={scopedOrders} />}
 
-        {tab === "bao_cao_cty" && currentUser.role === "admin" && <BaoCaoCongTy orders={orders} />}
+        {tab === "bao_cao_cty" && currentUser.role === "admin" && <BaoCaoCongTy orders={scopedOrders} />}
 
         {tab === "thong_bao" && (
           <AnnouncementsPage
@@ -2207,7 +2265,7 @@ export default function App() {
           />
         )}
         {tab === "tai_khoan" && (
-          <AdminAccountsPage currentUser={currentUser} employees={USERS} />
+          <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} />
         )}
         </TabErrorBoundary>
         </div>
