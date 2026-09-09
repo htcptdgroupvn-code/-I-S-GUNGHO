@@ -4281,6 +4281,7 @@ function ChtBaoCao({ currentUser, orders }) {
   const [toDate, setToDate] = useState("");
   const [tplUnit, setTplUnit] = useState(currentUser.store || ALL_BRANCHES[0].name);
   const [tplYear, setTplYear] = useState(String(new Date().getFullYear()));
+  const [showExports, setShowExports] = useState(false);
 
   const handleExport = () => {
     const sheets = [
@@ -4319,20 +4320,20 @@ function ChtBaoCao({ currentUser, orders }) {
       {!isCht && (
         <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <Building2 size={16} className="text-teal-700 shrink-0" />
+            <Building2 size={16} className="text-indigo-700 shrink-0" />
             <p className="text-sm font-medium text-slate-700 shrink-0">Xem báo cáo &amp; xếp hạng theo:</p>
             <div className="w-full sm:w-72">
               <select
                 value={viewCompany}
                 onChange={(e) => setViewCompany(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-600"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white font-medium text-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
               >
                 <option value="">— Tất cả (toàn tập đoàn) —</option>
                 {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
               </select>
             </div>
             {viewCompany && (
-              <button onClick={() => setViewCompany("")} className="text-xs text-teal-700 hover:underline shrink-0">
+              <button onClick={() => setViewCompany("")} className="text-xs text-indigo-700 hover:underline shrink-0">
                 ← Xem lại toàn tập đoàn
               </button>
             )}
@@ -4340,48 +4341,20 @@ function ChtBaoCao({ currentUser, orders }) {
         </Card>
       )}
 
+      {/* Chỉ số quan trọng nhất — xem lướt là hiểu ngay tình hình */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <MetricCard label="Tổng doanh thu" value={fmtMoney(revenue)} icon={Building2} accent="teal" />
+        <MetricCard label="Tổng doanh thu" value={fmtMoney(revenue)} icon={Building2} accent="indigo" />
         <MetricCard label="Đơn đã hoàn tất" value={paid.length} icon={CheckCircle2} accent="amber" />
-        <MetricCard label="Tổng số đơn hàng" value={viewOrders.length} icon={ShoppingBag} accent="indigo" />
+        <MetricCard label="Tổng số đơn hàng" value={viewOrders.length} icon={ShoppingBag} accent="teal" />
       </div>
 
-      <Card className="p-4">
-        <p className="font-semibold text-slate-800 text-sm mb-1">Xuất mẫu "Kết quả Gung Ho chi tiết công ty theo đơn vị"</p>
-        <p className="text-xs text-slate-500 mb-3">Chọn khối công ty và khoảng thời gian cần tra cứu (bỏ trống ngày nếu muốn lấy toàn bộ dữ liệu).</p>
-        <div className="flex flex-wrap items-end gap-3">
-          <SelectField label="Khối công ty" value={tplCompany} onChange={(e) => setTplCompany(e.target.value)}>
-            {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-          </SelectField>
-          <TextField label="Từ ngày" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          <TextField label="Đến ngày" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-          <PrimaryButton onClick={handleTemplateExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
-        </div>
-      </Card>
-
-      <Card className="p-4">
-        <p className="font-semibold text-slate-800 text-sm mb-1">Xuất mẫu "Thứ hạng Gung Ho"</p>
-        <p className="text-xs text-slate-500 mb-3">Xếp hạng nhân viên (Đại sứ) trong khối công ty đã chọn ở trên theo điểm thi đua TD, khoảng thời gian dùng chung với mục phía trên.</p>
-        <PrimaryButton onClick={handleRankingExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
-      </Card>
-
-      <Card className="p-4">
-        <p className="font-semibold text-slate-800 text-sm mb-1">Xuất mẫu "Kết quả Gung Ho chi tiết công ty theo thời gian"</p>
-        <p className="text-xs text-slate-500 mb-3">Chọn 1 đơn vị/chi nhánh và năm cần xem — chia theo 12 tháng.</p>
-        <div className="flex flex-wrap items-end gap-3">
-          <SelectField label="Đơn vị / chi nhánh" value={tplUnit} onChange={(e) => setTplUnit(e.target.value)}>
-            {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-          </SelectField>
-          <TextField label="Năm" type="number" value={tplYear} onChange={(e) => setTplYear(e.target.value)} />
-          <PrimaryButton onClick={handleTimeTemplateExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
-        </div>
-      </Card>
-
+      {/* Biểu đồ trực quan — đặt ngay sau chỉ số để thấy xu hướng trước khi đi vào chi tiết */}
       <div className="grid lg:grid-cols-2 gap-5">
         <RevenueTrendChart orders={viewOrders} title={viewCompany ? `Xu hướng doanh thu — ${viewCompany}` : "Xu hướng doanh thu 6 tháng gần đây (toàn tập đoàn)"} />
         <ProductMixPieChart orders={viewOrders} title={viewCompany ? `Tỉ trọng sản phẩm — ${viewCompany}` : "Tỉ trọng doanh thu theo sản phẩm (toàn tập đoàn)"} />
       </div>
 
+      {/* Xếp hạng chi tiết */}
       <div className="grid lg:grid-cols-2 gap-5">
         {viewCompany ? (
           <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.store} title={`Xếp hạng theo cửa hàng / chi nhánh — ${viewCompany}`} icon={Store} />
@@ -4396,6 +4369,46 @@ function ChtBaoCao({ currentUser, orders }) {
         title={viewCompany ? `Bảng xếp hạng Gungho — nhân viên ${viewCompany}` : "Bảng xếp hạng Gungho (toàn tập đoàn, theo điểm thi đua)"}
         icon={Award}
       />
+
+      {/* Xuất mẫu Excel — gộp lại, ẩn mặc định để không che các số liệu chính ở trên */}
+      <Card className="p-4">
+        <button onClick={() => setShowExports((s) => !s)} className="w-full flex items-center justify-between gap-3">
+          <p className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Download size={15} className="text-indigo-700" /> Xuất báo cáo theo mẫu (Excel)</p>
+          <ChevronRight size={16} className={`text-slate-400 transition-transform ${showExports ? "rotate-90" : ""}`} />
+        </button>
+        {showExports && (
+          <div className="mt-4 space-y-4 pt-4 border-t border-slate-100">
+            <div>
+              <p className="font-medium text-slate-800 text-sm mb-1">Kết quả Gung Ho chi tiết công ty theo đơn vị</p>
+              <p className="text-xs text-slate-500 mb-3">Chọn khối công ty và khoảng thời gian cần tra cứu (bỏ trống ngày nếu muốn lấy toàn bộ dữ liệu).</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <SelectField label="Khối công ty" value={tplCompany} onChange={(e) => setTplCompany(e.target.value)}>
+                  {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                </SelectField>
+                <TextField label="Từ ngày" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                <TextField label="Đến ngày" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                <PrimaryButton onClick={handleTemplateExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
+              </div>
+            </div>
+            <div className="pt-4 border-t border-slate-100">
+              <p className="font-medium text-slate-800 text-sm mb-1">Thứ hạng Gung Ho</p>
+              <p className="text-xs text-slate-500 mb-3">Xếp hạng nhân viên (Đại sứ) trong khối công ty đã chọn ở trên theo điểm thi đua TD, khoảng thời gian dùng chung với mục phía trên.</p>
+              <PrimaryButton onClick={handleRankingExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
+            </div>
+            <div className="pt-4 border-t border-slate-100">
+              <p className="font-medium text-slate-800 text-sm mb-1">Kết quả Gung Ho chi tiết công ty theo thời gian</p>
+              <p className="text-xs text-slate-500 mb-3">Chọn 1 đơn vị/chi nhánh và năm cần xem — chia theo 12 tháng.</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <SelectField label="Đơn vị / chi nhánh" value={tplUnit} onChange={(e) => setTplUnit(e.target.value)}>
+                  {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+                </SelectField>
+                <TextField label="Năm" type="number" value={tplYear} onChange={(e) => setTplYear(e.target.value)} />
+                <PrimaryButton onClick={handleTimeTemplateExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
+              </div>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
