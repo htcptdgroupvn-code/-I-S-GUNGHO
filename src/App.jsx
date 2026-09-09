@@ -783,6 +783,7 @@ function mapEmployee(e) {
   return {
     id: e.id, employeeCode: e.employee_code, name: e.name, role: e.role, store: e.store, position: e.position, phone: e.phone || "",
     mustChangePassword: !!e.must_change_password, passwordChangeDeadline: e.password_change_deadline || null,
+    accountDisabled: !!e.account_disabled,
     // Danh sách công ty (trong 5 công ty) mà tài khoản này được phép xem — null/rỗng
     // nghĩa là chỉ xem đúng công ty của chi nhánh (store) mình đang gắn. Dùng để
     // "liên kết" nhiều công ty cho 1 tài khoản sau này (VD: bạn — chủ tất cả 5 công ty).
@@ -849,7 +850,7 @@ function mapAnnouncement(a) {
 
 async function fetchAll() {
   const [emp, cust, ord, notif, announ] = await Promise.all([
-    supabase.from("employees").select("id,employee_code,name,role,store,position,phone,must_change_password,password_change_deadline"),
+    supabase.from("employees").select("id,employee_code,name,role,store,position,phone,must_change_password,password_change_deadline,visible_companies,account_disabled"),
     supabase.from("customers").select("*").order("created_at", { ascending: false }),
     supabase.from("orders").select("*").order("created_at", { ascending: false }),
     supabase.from("notifications").select("*").order("created_at", { ascending: false }),
@@ -1474,18 +1475,276 @@ function ResetPasswordModal({ currentUser, employee, onClose, onSuccess }) {
   );
 }
 
-function AdminAccountsPage({ currentUser, employees }) {
+function CreateEmployeeModal({ currentUser, onClose, onSuccess }) {
+  const [adminPassword, setAdminPassword] = useState("");
+  const [employeeCode, setEmployeeCode] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("dai_su");
+  const [store, setStore] = useState("");
+  const [position, setPosition] = useState("");
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!employeeCode.trim() || !name.trim()) {
+      setError("Vui lòng nhập mã nhân viên và họ tên.");
+      return;
+    }
+    if (!adminPassword) {
+      setError("Vui lòng nhập mật khẩu của chính bạn (Admin) để xác nhận.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const { data, error: qErr } = await supabase.rpc("admin_create_employee", {
+        p_admin_id: currentUser.id,
+        p_admin_password: adminPassword,
+        p_employee_code: employeeCode.trim(),
+        p_name: name.trim(),
+        p_role: role,
+        p_store: store || null,
+        p_position: position || null,
+        p_phone: phone || null,
+      });
+      if (qErr) {
+        if (qErr.message?.includes("employee_code_taken")) setError("Mã nhân viên này đã tồn tại, vui lòng chọn mã khác.");
+        else if (qErr.message?.includes("admin_password_incorrect")) setError("Mật khẩu Admin không đúng, vui lòng thử lại.");
+        else setError("Không tạo được tài khoản, vui lòng thử lại.");
+        return;
+      }
+      onSuccess(data);
+    } catch (e) {
+      console.error(e);
+      setError("Không tạo được tài khoản, vui lòng thử lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 my-8">
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-semibold text-slate-800 flex items-center gap-2"><UserPlus size={17} className="text-indigo-700" /> Thêm tài khoản mới</p>
+          <button onClick={onClose}><X size={18} className="text-slate-400" /></button>
+        </div>
+        <div className="space-y-3">
+          <TextField label="Mã nhân viên (dùng để đăng nhập)" value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="Ví dụ: ds6 hoặc 09xxxxxxxx" />
+          <TextField label="Họ tên đầy đủ" value={name} onChange={(e) => setName(e.target.value)} />
+          <SelectField label="Vai trò" value={role} onChange={(e) => setRole(e.target.value)}>
+            {Object.entries(ROLE_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+          </SelectField>
+          <SelectField label="Store / chi nhánh làm việc" value={store} onChange={(e) => setStore(e.target.value)}>
+            <option value="">— Chọn store —</option>
+            {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name} — {b.company}</option>)}
+          </SelectField>
+          <TextField label="Chức vụ (tuỳ chọn)" value={position} onChange={(e) => setPosition(e.target.value)} />
+          <TextField label="Số điện thoại" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="09xxxxxxxx" />
+          <p className="text-[11px] text-slate-400">Mật khẩu mặc định ban đầu là <span className="font-medium text-slate-600">123456</span>, tài khoản sẽ bị bắt đổi mật khẩu ngay lần đăng nhập đầu tiên.</p>
+          <TextField label="Xác nhận: nhập mật khẩu của chính bạn (Admin)" type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+          {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
+          <div className="flex gap-2">
+            <PrimaryButton type="button" onClick={submit} disabled={saving}>{saving ? "Đang tạo..." : "Tạo tài khoản"}</PrimaryButton>
+            <GhostButton type="button" onClick={onClose}>Hủy</GhostButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditEmployeeModal({ currentUser, employee, onClose, onSuccess }) {
+  const [adminPassword, setAdminPassword] = useState("");
+  const [name, setName] = useState(employee.name || "");
+  const [role, setRole] = useState(employee.role);
+  const [store, setStore] = useState(employee.store || "");
+  const [position, setPosition] = useState(employee.position || "");
+  const [phone, setPhone] = useState(employee.phone || "");
+  const [visibleCompanies, setVisibleCompanies] = useState(employee.visibleCompanies || []);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const toggleCompany = (name) => {
+    setVisibleCompanies((prev) => (prev.includes(name) ? prev.filter((c) => c !== name) : [...prev, name]));
+  };
+
+  const submit = async () => {
+    if (!name.trim()) {
+      setError("Vui lòng nhập họ tên.");
+      return;
+    }
+    if (!adminPassword) {
+      setError("Vui lòng nhập mật khẩu của chính bạn (Admin) để xác nhận.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const { data, error: qErr } = await supabase.rpc("admin_update_employee", {
+        p_admin_id: currentUser.id,
+        p_admin_password: adminPassword,
+        p_target_employee_id: employee.id,
+        p_name: name.trim(),
+        p_role: role,
+        p_store: store || null,
+        p_position: position || null,
+        p_phone: phone || null,
+        p_visible_companies: visibleCompanies.length ? visibleCompanies : null,
+      });
+      if (qErr) {
+        setError(qErr.message?.includes("admin_password_incorrect") ? "Mật khẩu Admin không đúng, vui lòng thử lại." : "Không lưu được thay đổi, vui lòng thử lại.");
+        return;
+      }
+      if (!data) {
+        setError("Mật khẩu Admin không đúng, vui lòng thử lại.");
+        return;
+      }
+      onSuccess();
+    } catch (e) {
+      console.error(e);
+      setError("Không lưu được thay đổi, vui lòng thử lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5 my-8">
+        <div className="flex items-center justify-between mb-4">
+          <p className="font-semibold text-slate-800 flex items-center gap-2"><Pencil size={16} className="text-indigo-700" /> Sửa tài khoản</p>
+          <button onClick={onClose}><X size={18} className="text-slate-400" /></button>
+        </div>
+        <p className="text-xs text-slate-400 mb-3">Mã nhân viên: <span className="font-medium text-slate-600">{employee.employeeCode}</span> (không đổi được)</p>
+        <div className="space-y-3">
+          <TextField label="Họ tên đầy đủ" value={name} onChange={(e) => setName(e.target.value)} />
+          <SelectField label="Vai trò" value={role} onChange={(e) => setRole(e.target.value)}>
+            {Object.entries(ROLE_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+          </SelectField>
+          <SelectField label="Store / chi nhánh làm việc" value={store} onChange={(e) => setStore(e.target.value)}>
+            <option value="">— Chọn store —</option>
+            {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name} — {b.company}</option>)}
+          </SelectField>
+          <TextField label="Chức vụ" value={position} onChange={(e) => setPosition(e.target.value)} />
+          <TextField label="Số điện thoại" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <div>
+            <p className="text-sm font-medium text-slate-700 mb-1.5">Cho xem thêm công ty khác (tuỳ chọn)</p>
+            <p className="text-[11px] text-slate-400 mb-2">Để trống = chỉ xem đúng công ty của chi nhánh phía trên.</p>
+            <div className="space-y-1.5">
+              {COMPANIES.map((c) => (
+                <label key={c.name} className="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={visibleCompanies.includes(c.name)} onChange={() => toggleCompany(c.name)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-300" />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          </div>
+          <TextField label="Xác nhận: nhập mật khẩu của chính bạn (Admin)" type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+          {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
+          <div className="flex gap-2">
+            <PrimaryButton type="button" onClick={submit} disabled={saving}>{saving ? "Đang lưu..." : "Lưu thay đổi"}</PrimaryButton>
+            <GhostButton type="button" onClick={onClose}>Hủy</GhostButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmAdminActionModal({ currentUser, title, description, confirmLabel, danger, onConfirm, onClose }) {
+  const [adminPassword, setAdminPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!adminPassword) {
+      setError("Vui lòng nhập mật khẩu của chính bạn (Admin) để xác nhận.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      await onConfirm(adminPassword);
+    } catch (e) {
+      setError(e?.message || "Không thực hiện được, vui lòng thử lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5">
+        <div className="flex items-center justify-between mb-2">
+          <p className="font-semibold text-slate-800">{title}</p>
+          <button onClick={onClose}><X size={18} className="text-slate-400" /></button>
+        </div>
+        <p className="text-sm text-slate-500 mb-4">{description}</p>
+        <div className="space-y-3">
+          <TextField label="Xác nhận: nhập mật khẩu của chính bạn (Admin)" type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} />
+          {error && <p className="text-sm text-rose-600 flex items-center gap-1.5"><AlertCircle size={14} /> {error}</p>}
+          <div className="flex gap-2">
+            {danger ? (
+              <DangerButton type="button" onClick={submit} disabled={saving}>{saving ? "Đang xử lý..." : confirmLabel}</DangerButton>
+            ) : (
+              <PrimaryButton type="button" onClick={submit} disabled={saving}>{saving ? "Đang xử lý..." : confirmLabel}</PrimaryButton>
+            )}
+            <GhostButton type="button" onClick={onClose}>Hủy</GhostButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminAccountsPage({ currentUser, employees, onRefresh }) {
   const [query, setQuery] = useState("");
   const [resetting, setResetting] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [statusTarget, setStatusTarget] = useState(null); // { employee, disabled }
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
 
   const q = query.trim().toLowerCase();
   const filtered = q
     ? employees.filter((e) => e.name?.toLowerCase().includes(q) || e.employeeCode?.toLowerCase().includes(q) || e.store?.toLowerCase().includes(q))
     : employees;
 
+  const setStatus = async (adminPassword) => {
+    const { employee, disabled } = statusTarget;
+    const { data, error } = await supabase.rpc("admin_set_employee_status", {
+      p_admin_id: currentUser.id, p_admin_password: adminPassword, p_target_employee_id: employee.id, p_disabled: disabled,
+    });
+    if (error || !data) throw new Error("Mật khẩu Admin không đúng, vui lòng thử lại.");
+    setStatusTarget(null);
+    onRefresh?.();
+  };
+
+  const doDelete = async (adminPassword) => {
+    setDeleteError("");
+    const { data, error } = await supabase.rpc("admin_delete_employee", {
+      p_admin_id: currentUser.id, p_admin_password: adminPassword, p_target_employee_id: deleteTarget.id,
+    });
+    if (error) {
+      if (error.message?.includes("employee_has_orders") || error.message?.includes("employee_has_customers")) {
+        throw new Error("Tài khoản này đã gắn với đơn hàng/khách hàng, không xoá được — dùng nút Khoá thay thế.");
+      }
+      throw new Error("Mật khẩu Admin không đúng, vui lòng thử lại.");
+    }
+    if (!data) throw new Error("Mật khẩu Admin không đúng, vui lòng thử lại.");
+    setDeleteTarget(null);
+    onRefresh?.();
+  };
+
   return (
     <div>
-      <SectionTitle icon={ShieldCheck} title="Quản lý tài khoản" subtitle={`${employees.length} tài khoản nhân sự — tra cứu & đặt lại mật khẩu khi cần`} />
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <SectionTitle icon={ShieldCheck} title="Quản lý tài khoản" subtitle={`${employees.length} tài khoản nhân sự`} />
+        <PrimaryButton onClick={() => setCreating(true)}><UserPlus size={15} /> Thêm tài khoản</PrimaryButton>
+      </div>
       <Card className="p-3 mb-4 flex items-center gap-2">
         <Search size={15} className="text-slate-400 shrink-0" />
         <input
@@ -1501,19 +1760,36 @@ function AdminAccountsPage({ currentUser, employees }) {
       ) : (
         <div className="space-y-2">
           {filtered.map((e) => (
-            <Card key={e.id} className="p-3.5 flex items-center justify-between gap-3">
+            <Card key={e.id} className={`p-3.5 flex items-center justify-between gap-3 flex-wrap ${e.accountDisabled ? "opacity-60" : ""}`}>
               <div className="min-w-0 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-teal-700 to-teal-900 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+                <div className="w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-semibold shrink-0">
                   {e.name && e.name.trim() ? e.name.trim().split(" ").slice(-1)[0][0] : "?"}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">{e.name} <span className="text-slate-400 font-normal">({e.employeeCode})</span></p>
+                  <p className="text-sm font-medium text-slate-800 truncate">
+                    {e.name} <span className="text-slate-400 font-normal">({e.employeeCode})</span>
+                    {e.accountDisabled && <Badge className="ml-1.5 bg-rose-50 text-rose-700 border-rose-200">Đã khoá</Badge>}
+                    {e.visibleCompanies?.length > 1 && <Badge className="ml-1.5 bg-indigo-50 text-indigo-700 border-indigo-200">{e.visibleCompanies.length} công ty</Badge>}
+                  </p>
                   <p className="text-xs text-slate-400 truncate">{ROLE_META[e.role]?.short || e.role} {e.store ? `· ${e.store}` : ""}{e.mustChangePassword ? " · Đang chờ đổi mật khẩu" : ""}</p>
                 </div>
               </div>
-              <GhostButton className="!text-xs shrink-0" onClick={() => setResetting(e)}>
-                <Lock size={13} /> Đặt lại mật khẩu
-              </GhostButton>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <GhostButton className="!text-xs" onClick={() => setEditing(e)}>
+                  <Pencil size={13} /> Sửa
+                </GhostButton>
+                <GhostButton className="!text-xs" onClick={() => setResetting(e)}>
+                  <Lock size={13} /> Đặt lại mật khẩu
+                </GhostButton>
+                <GhostButton className="!text-xs" onClick={() => setStatusTarget({ employee: e, disabled: !e.accountDisabled })}>
+                  {e.accountDisabled ? <ShieldCheck size={13} /> : <Lock size={13} />} {e.accountDisabled ? "Mở khoá" : "Khoá"}
+                </GhostButton>
+                {e.id !== currentUser.id && (
+                  <button onClick={() => { setDeleteError(""); setDeleteTarget(e); }} className="text-xs text-rose-600 hover:text-rose-800 px-2 py-1.5 flex items-center gap-1">
+                    <Trash2 size={13} /> Xoá
+                  </button>
+                )}
+              </div>
             </Card>
           ))}
         </div>
@@ -1524,6 +1800,43 @@ function AdminAccountsPage({ currentUser, employees }) {
           employee={resetting}
           onClose={() => setResetting(null)}
           onSuccess={() => setResetting(null)}
+        />
+      )}
+      {creating && (
+        <CreateEmployeeModal
+          currentUser={currentUser}
+          onClose={() => setCreating(false)}
+          onSuccess={() => { setCreating(false); onRefresh?.(); }}
+        />
+      )}
+      {editing && (
+        <EditEmployeeModal
+          currentUser={currentUser}
+          employee={editing}
+          onClose={() => setEditing(null)}
+          onSuccess={() => { setEditing(null); onRefresh?.(); }}
+        />
+      )}
+      {statusTarget && (
+        <ConfirmAdminActionModal
+          currentUser={currentUser}
+          title={statusTarget.disabled ? "Khoá tài khoản" : "Mở khoá tài khoản"}
+          description={`${statusTarget.disabled ? "Khoá" : "Mở khoá"} tài khoản ${statusTarget.employee.name} (${statusTarget.employee.employeeCode})?`}
+          confirmLabel={statusTarget.disabled ? "Khoá tài khoản" : "Mở khoá"}
+          danger={statusTarget.disabled}
+          onConfirm={setStatus}
+          onClose={() => setStatusTarget(null)}
+        />
+      )}
+      {deleteTarget && (
+        <ConfirmAdminActionModal
+          currentUser={currentUser}
+          title="Xoá tài khoản"
+          description={`Xoá vĩnh viễn tài khoản ${deleteTarget.name} (${deleteTarget.employeeCode})? Không xoá được nếu tài khoản đã gắn với đơn hàng/khách hàng — khi đó hãy dùng nút Khoá.`}
+          confirmLabel="Xoá vĩnh viễn"
+          danger
+          onConfirm={doDelete}
+          onClose={() => setDeleteTarget(null)}
         />
       )}
     </div>
@@ -2278,7 +2591,7 @@ export default function App() {
           />
         )}
         {tab === "tai_khoan" && (
-          <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} />
+          <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} onRefresh={refreshAll} />
         )}
         </TabErrorBoundary>
         </div>
