@@ -336,17 +336,17 @@ const P = {
 // Quy định thưởng Gung Ho riêng cho 4 sản phẩm thuộc Khối xe máy (Phú Tài Đức 1-10)
 // Xe máy: thưởng theo mức giảm giá/xe, phân biệt theo loại xe
 function computeXeMayRewardPerUnit(vehicleType, discountPerUnit) {
-  const threshold = vehicleType === "ga_con" ? 400000 : 300000; // xe ga/côn: 400k, xe số/điện: 300k
-  return Number(discountPerUnit) <= threshold ? 200000 : 100000;
+  const threshold = vehicleType === "ga_con" ? cs("xe_may_ga_con_threshold", 400000) : cs("xe_may_so_dien_threshold", 300000);
+  return Number(discountPerUnit) <= threshold ? cs("xe_may_reward_high", 200000) : cs("xe_may_reward_low", 100000);
 }
 // Khách hàng Doanh nghiệp / Tổ chức: hoa hồng tính theo bậc số lượng, không
 // phụ thuộc mức giảm giá — SL <= 10: 100.000đ/xe; SL > 10: 50.000đ/xe.
 function computeXeMayRewardPerUnitDoanhNghiep(quantity) {
-  return Number(quantity) <= 10 ? 100000 : 50000;
+  return Number(quantity) <= 10 ? cs("xe_may_dn_reward_low_qty", 100000) : cs("xe_may_dn_reward_high_qty", 50000);
 }
 // Bảo hiểm xe máy: thưởng theo thời hạn hợp đồng
 function baoHiemRewardPerUnit(years) {
-  return years === 2 ? 20000 : years === 3 ? 25000 : 15000;
+  return years === 2 ? cs("bao_hiem_xe_may_2nam", 20000) : years === 3 ? cs("bao_hiem_xe_may_3nam", 25000) : cs("bao_hiem_xe_may_khac", 15000);
 }
 // Phụ tùng bán lẻ / Dịch vụ sửa chữa / Phụ kiện ô tô: % doanh thu nếu KHÔNG giảm giá, 0đ nếu có giảm giá (xem ServiceRevenueForm)
 const XE_MAY_SPECIAL_PRODUCTS = [P.XE_MAY, P.BAO_HIEM_XE_MAY, P.PHU_TUNG, P.SUA_CHUA_XE_MAY];
@@ -355,15 +355,16 @@ const XE_MAY_SPECIAL_PRODUCTS = [P.XE_MAY, P.BAO_HIEM_XE_MAY, P.PHU_TUNG, P.SUA_
 // Xe mới ô tô: thưởng 900.000đ/xe, tỷ lệ hưởng theo mức giảm giá ngoài chính sách
 function otoRewardPerUnit(discountPerUnit) {
   const d = Number(discountPerUnit) || 0;
-  const base = 900000;
+  const base = cs("oto_moi_base", 900000);
+  const threshold = cs("oto_moi_discount_threshold", 2000000);
   if (d <= 0) return base; // không giảm giá ngoài chính sách: 100%
-  if (d <= 2000000) return Math.round(base * 0.7); // ≤2.000.000đ: 70%
-  return Math.round(base * 0.5); // >2.000.000đ: 50%
+  if (d <= threshold) return Math.round(base * (cs("oto_moi_rate_medium_percent", 70) / 100));
+  return Math.round(base * (cs("oto_moi_rate_low_percent", 50) / 100));
 }
 // Bảo hiểm ô tô: hoa hồng = 82% x mức chiết khấu chính sách (do THT thông báo, nhập tay) x doanh thu
 function baoHiemOTOReward(revenue, hasDiscount, policyRatePercent) {
   if (hasDiscount) return 0;
-  const gunghoRate = (0.82 * (Number(policyRatePercent) || 0)) / 100;
+  const gunghoRate = ((cs("bao_hiem_oto_multiplier_percent", 82) / 100) * (Number(policyRatePercent) || 0)) / 100;
   return Math.round(Number(revenue || 0) * gunghoRate);
 }
 const OTO_SPECIAL_PRODUCTS = [P.O_TO, P.BAO_HIEM_O_TO, P.PHU_KIEN_O_TO, P.SUA_CHUA_O_TO];
@@ -372,10 +373,10 @@ const OTO_SPECIAL_PRODUCTS = [P.O_TO, P.BAO_HIEM_O_TO, P.PHU_KIEN_O_TO, P.SUA_CH
 // Đặc sản địa phương / Phòng nghỉ / Tiệc lưu động - nhà hàng - ăn sáng: 3% doanh thu (không phân biệt giảm giá)
 // Vé máy bay: theo số lượng vé, phân biệt khách lẻ (15.000đ/vé) và khách đoàn (10.000đ/vé)
 function veMayBayRewardPerUnit(customerType) {
-  return customerType === "doan" ? 10000 : 15000;
+  return customerType === "doan" ? cs("ve_may_bay_doan", 10000) : cs("ve_may_bay_le", 15000);
 }
-// Tour nội địa: 500.000đ/hợp đồng thành công
-const TOUR_REWARD_PER_CONTRACT = 500000;
+// Tour nội địa: mỗi hợp đồng thành công
+const TOUR_REWARD_PER_CONTRACT = () => cs("tour_reward", 500000);
 const HTC_SPECIAL_PRODUCTS = [P.DAC_SAN, P.PHONG_NGHI, P.TIEC, P.VE_MAY_BAY, P.TOUR];
 // VYC: Sản phẩm thời trang — 5% doanh thu. Vật tư nông nghiệp: Phân bón — 2% doanh thu.
 const VYC_SPECIAL_PRODUCTS = [P.VYC];
@@ -621,6 +622,41 @@ function exportGungHoRankingTemplate({ companyName, orders, fromDate, toDate }) 
 // để toàn bộ phần code còn lại (vốn tham chiếu USERS trực tiếp) không cần sửa thêm.
 let USERS = [];
 
+// Chính sách hoa hồng/thưởng — nạp thật từ bảng `commission_settings` trên Supabase
+// khi ứng dụng khởi động, admin có thể xem & chỉnh sửa trong trang "Chính sách công ty".
+// Nếu chưa cấu hình (hoặc chưa chạy migration), mỗi công thức tự dùng số mặc định
+// đã chạy đúng từ trước — không đơn hàng nào bị ảnh hưởng khi chưa ai chỉnh sửa gì.
+let COMMISSION_SETTINGS = {};
+function cs(key, fallback) {
+  const v = COMMISSION_SETTINGS[key];
+  return v === undefined || v === null || v === "" ? fallback : Number(v);
+}
+// Mô tả để hiển thị trong trang chỉnh sửa — key phải khớp đúng với các nơi dùng cs() bên dưới
+const COMMISSION_SETTING_META = [
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_ga_con_threshold", label: "Ngưỡng giảm giá — xe ga/côn (đ)", fallback: 400000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_so_dien_threshold", label: "Ngưỡng giảm giá — xe số/điện (đ)", fallback: 300000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_reward_high", label: "Thưởng khi giảm giá ≤ ngưỡng (đ/xe)", fallback: 200000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_reward_low", label: "Thưởng khi giảm giá > ngưỡng (đ/xe)", fallback: 100000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_dn_reward_low_qty", label: "Khách DN/Tổ chức — SL ≤ 10 (đ/xe)", fallback: 100000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_dn_reward_high_qty", label: "Khách DN/Tổ chức — SL > 10 (đ/xe)", fallback: 50000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "bao_hiem_xe_may_2nam", label: "Bảo hiểm xe máy — hợp đồng 2 năm (đ)", fallback: 20000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "bao_hiem_xe_may_3nam", label: "Bảo hiểm xe máy — hợp đồng 3 năm (đ)", fallback: 25000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "bao_hiem_xe_may_khac", label: "Bảo hiểm xe máy — thời hạn khác (đ)", fallback: 15000 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_base", label: "Xe ô tô mới — thưởng cơ bản (đ/xe)", fallback: 900000 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_discount_threshold", label: "Ngưỡng giảm giá ngoài chính sách (đ)", fallback: 2000000 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_rate_medium_percent", label: "Tỷ lệ hưởng khi giảm giá ≤ ngưỡng (%)", fallback: 70 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_rate_low_percent", label: "Tỷ lệ hưởng khi giảm giá > ngưỡng (%)", fallback: 50 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "bao_hiem_oto_multiplier_percent", label: "Bảo hiểm ô tô — hệ số hưởng trên tỷ lệ chính sách (%)", fallback: 82 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "phu_kien_oto_rate_percent", label: "Phụ kiện, chăm sóc xe — % doanh thu", fallback: 9 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "sua_chua_oto_rate_percent", label: "Sửa chữa, bảo dưỡng ô tô — % doanh thu", fallback: 5 },
+  { company: "III. HTC", key: "htc_flat_rate_percent", label: "Đặc sản / Phòng nghỉ / Tiệc — % doanh thu", fallback: 3 },
+  { company: "III. HTC", key: "ve_may_bay_le", label: "Vé máy bay — khách lẻ (đ/vé)", fallback: 15000 },
+  { company: "III. HTC", key: "ve_may_bay_doan", label: "Vé máy bay — khách đoàn (đ/vé)", fallback: 10000 },
+  { company: "III. HTC", key: "tour_reward", label: "Tour nội địa — mỗi hợp đồng thành công (đ)", fallback: 500000 },
+  { company: "IV. VYC", key: "vyc_rate_percent", label: "Sản phẩm thời trang — % doanh thu", fallback: 5 },
+  { company: "V. Vật tư nông nghiệp", key: "vtnn_rate_percent", label: "Phân bón — % doanh thu", fallback: 2 },
+];
+
 const ROLE_META = {
   dai_su: { label: "Đại sứ Gungho", short: "Đại sứ", color: "bg-teal-50 text-teal-700 border-teal-200" },
   xu_ly: { label: "Nhân viên xử lý - chăm sóc", short: "Xử lý CSKH", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
@@ -634,6 +670,60 @@ const ROLE_META = {
   ke_toan_kho: { label: "Kế toán kho (Phụ tùng) — TM1", short: "KT Kho (TM1)", color: "bg-rose-50 text-rose-700 border-rose-200" },
   admin: { label: "Quản trị hệ thống", short: "Admin", color: "bg-slate-800 text-white border-slate-800" },
 };
+const ALL_ROLES = Object.keys(ROLE_META);
+
+// ---------------------------------------------------------------------------
+// Danh mục toàn bộ các mục (tab) trong app + vai trò nào được thấy mặc định.
+// Đây là "cấu hình gốc" — nếu chưa ai chỉnh phân quyền trong trang "Phân quyền",
+// app dùng đúng danh sách mặc định này (giống hệt hành vi trước khi có tính năng
+// phân quyền tuỳ chỉnh).
+// ---------------------------------------------------------------------------
+const NAV_GROUP_ORDER = [
+  { id: "ban_hang", title: "Bán hàng" },
+  { id: "cskh", title: "Chăm sóc khách hàng" },
+  { id: "quan_ly", title: "Quản lý" },
+  { id: "ke_toan_grp", title: "Kế toán" },
+  { id: "bao_cao_cty_grp", title: null },
+  { id: "thong_bao_grp", title: null },
+  { id: "quan_tri", title: "Quản trị" },
+];
+const NAV_ITEMS = [
+  { key: "khach_hang", label: "Khách hàng", icon: Users, groupId: "ban_hang", defaultRoles: ALL_ROLES },
+  { key: "don_hang_ds", label: "Đơn hàng của tôi", icon: ClipboardList, groupId: "ban_hang", defaultRoles: ALL_ROLES },
+  { key: "bao_cao_ds", label: "Báo cáo", icon: BarChart3, groupId: "ban_hang", defaultRoles: ALL_ROLES },
+  { key: "duoc_giao", label: "Đơn được giao", icon: Inbox, groupId: "cskh", defaultRoles: ["xu_ly", "ky_thuat_truong", "le_tan", "admin"] },
+  { key: "don_hang_cskh", label: "Đơn hàng CSKH", icon: ClipboardList, groupId: "cskh", defaultRoles: ["xu_ly", "ky_thuat_truong", "le_tan", "admin"] },
+  { key: "bao_cao_cskh", label: "Báo cáo CSKH", icon: BarChart3, groupId: "cskh", defaultRoles: ["xu_ly", "ky_thuat_truong", "le_tan", "admin"] },
+  { key: "phan_cong", label: "Phân công", icon: ArrowRightLeft, groupId: "quan_ly", defaultRoles: ["cht", "admin"] },
+  { key: "bao_cao_cht", label: "Báo cáo doanh số", icon: BarChart3, groupId: "quan_ly", defaultRoles: ["cht", "admin"] },
+  { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck, groupId: "ke_toan_grp", defaultRoles: ["ke_toan", "ke_toan_xe", "ke_toan_bao_hiem", "ke_toan_dich_vu", "ke_toan_kho", "admin"] },
+  { key: "lich_su", label: "Lịch sử", icon: Wallet, groupId: "ke_toan_grp", defaultRoles: ["ke_toan", "ke_toan_xe", "ke_toan_bao_hiem", "ke_toan_dich_vu", "ke_toan_kho", "admin"] },
+  { key: "bao_cao_cty", label: "Báo cáo công ty", icon: Landmark, groupId: "bao_cao_cty_grp", defaultRoles: ["admin"] },
+  { key: "thong_bao", label: "Thông báo", icon: Megaphone, groupId: "thong_bao_grp", defaultRoles: ALL_ROLES },
+  { key: "tai_khoan", label: "Tài khoản", icon: ShieldCheck, groupId: "quan_tri", defaultRoles: ["admin"] },
+  { key: "chinh_sach_cty", label: "Chính sách công ty", icon: Building2, groupId: "quan_tri", defaultRoles: ["admin"] },
+  { key: "phan_quyen", label: "Phân quyền", icon: Lock, groupId: "quan_tri", defaultRoles: ["admin"] },
+];
+
+// Phân quyền thật — nạp từ bảng `role_permissions` trên Supabase khi khởi động.
+// Key dạng "role:tab_key" -> true/false. Nếu (role, tab_key) chưa có dòng nào,
+// dùng defaultRoles của mục đó (an toàn tuyệt đối trước khi ai chỉnh sửa gì).
+let ROLE_PERMISSIONS = {};
+function isNavItemEnabled(role, item) {
+  // Khoá an toàn: Admin luôn thấy Tài khoản + Phân quyền, tránh tự khoá mất quyền truy cập chính mình.
+  if (role === "admin" && (item.key === "tai_khoan" || item.key === "phan_quyen")) return true;
+  const dbKey = `${role}:${item.key}`;
+  if (Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, dbKey)) return !!ROLE_PERMISSIONS[dbKey];
+  return item.defaultRoles.includes(role);
+}
+function buildNavGroupsForRole(role) {
+  return NAV_GROUP_ORDER
+    .map((g) => ({ title: g.title, items: NAV_ITEMS.filter((it) => it.groupId === g.id && isNavItemEnabled(role, it)) }))
+    .filter((g) => g.items.length > 0);
+}
+function navItemByKey(key) {
+  return NAV_ITEMS.find((it) => it.key === key) || { key, defaultRoles: [] };
+}
 // Các vai trò thuộc nhóm "kế toán" (đều dùng chung menu Kế toán) — 4 vai trò
 // chuyên trách chỉ dành riêng cho khối TM1 (xe máy), mỗi vai trò chỉ xử lý
 // đúng 1 nhóm sản phẩm.
@@ -849,24 +939,30 @@ function mapAnnouncement(a) {
 }
 
 async function fetchAll() {
-  const [emp, cust, ord, notif, announ] = await Promise.all([
+  const [emp, cust, ord, notif, announ, cset, rperm] = await Promise.all([
     supabase.from("employees").select("id,employee_code,name,role,store,position,phone,must_change_password,password_change_deadline,visible_companies,account_disabled"),
     supabase.from("customers").select("*").order("created_at", { ascending: false }),
     supabase.from("orders").select("*").order("created_at", { ascending: false }),
     supabase.from("notifications").select("*").order("created_at", { ascending: false }),
     supabase.from("announcements").select("*").order("created_at", { ascending: false }),
+    supabase.from("commission_settings").select("key,value"),
+    supabase.from("role_permissions").select("role,tab_key,enabled"),
   ]);
   if (emp.error) console.error("fetch employees error", emp.error);
   if (cust.error) console.error("fetch customers error", cust.error);
   if (ord.error) console.error("fetch orders error", ord.error);
   if (notif.error) console.error("fetch notifications error", notif.error);
   if (announ.error) console.error("fetch announcements error", announ.error);
+  if (cset.error) console.error("fetch commission_settings error", cset.error);
+  if (rperm.error) console.error("fetch role_permissions error", rperm.error);
   return {
     employees: (emp.data || []).map(mapEmployee),
     customers: (cust.data || []).map(mapCustomer),
     orders: (ord.data || []).map(mapOrder),
     notifications: (notif.data || []).map(mapNotification),
     announcements: (announ.data || []).map(mapAnnouncement),
+    commissionSettings: Object.fromEntries((cset.data || []).map((r) => [r.key, r.value])),
+    rolePermissions: Object.fromEntries((rperm.data || []).map((r) => [`${r.role}:${r.tab_key}`, !!r.enabled])),
   };
 }
 
@@ -1699,7 +1795,7 @@ function ConfirmAdminActionModal({ currentUser, title, description, confirmLabel
   );
 }
 
-function ChinhSachCongTy({ currentUser }) {
+function ChinhSachCongTy({ currentUser, onRefresh }) {
   const [activeCompany, setActiveCompany] = useState(COMPANIES[0].name);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1708,6 +1804,39 @@ function ChinhSachCongTy({ currentUser }) {
   const [commissionNote, setCommissionNote] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+
+  const settingsForCompany = COMMISSION_SETTING_META.filter((m) => m.company === activeCompany);
+  const [settingValues, setSettingValues] = useState({});
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsMsg, setSettingsMsg] = useState("");
+
+  useEffect(() => {
+    const initial = {};
+    settingsForCompany.forEach((m) => { initial[m.key] = cs(m.key, m.fallback); });
+    setSettingValues(initial);
+    setSettingsMsg("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCompany]);
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    setSettingsMsg("");
+    const upserts = settingsForCompany.map((m) => ({
+      key: m.key,
+      value: Number(settingValues[m.key]),
+      updated_by_name: currentUser.name,
+      updated_at: new Date().toISOString(),
+    }));
+    const { error: qErr } = await supabase.from("commission_settings").upsert(upserts, { onConflict: "key" });
+    setSavingSettings(false);
+    if (qErr) {
+      console.error("save commission_settings error", qErr);
+      setSettingsMsg("error:Không lưu được, vui lòng thử lại.");
+      return;
+    }
+    setSettingsMsg("ok:Đã lưu — áp dụng ngay cho các đơn hàng xác nhận sau đó.");
+    onRefresh?.();
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1771,7 +1900,7 @@ function ChinhSachCongTy({ currentUser }) {
 
   return (
     <div>
-      <SectionTitle icon={Building2} title="Chính sách công ty" subtitle="Danh sách sản phẩm/dịch vụ và ghi chú tỷ lệ, mức thưởng hoa hồng theo từng công ty" />
+      <SectionTitle icon={Building2} title="Chính sách công ty" subtitle="Công thức tính hoa hồng thật, danh sách sản phẩm/dịch vụ và ghi chú theo từng công ty" />
 
       <div className="flex gap-1 overflow-x-auto mb-4 border-b border-slate-200 no-scrollbar">
         {COMPANIES.map((c) => (
@@ -1787,16 +1916,44 @@ function ChinhSachCongTy({ currentUser }) {
         ))}
       </div>
 
+      {settingsForCompany.length > 0 && (
+        <Card className="p-4 mb-4">
+          <p className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2"><Wallet size={15} className="text-indigo-700" /> Công thức tính hoa hồng thật</p>
+          <p className="text-xs text-slate-500 mb-3">Đây là các con số app đang dùng thật để tính hoa hồng khi Kế toán xác nhận đơn hàng của {activeCompany}. Sửa số bên dưới sẽ áp dụng ngay từ lần xác nhận tiếp theo — không ảnh hưởng các đơn đã xác nhận trước đó.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {settingsForCompany.map((m) => (
+              <div key={m.key}>
+                <label className="block text-xs font-medium text-slate-600 mb-1">{m.label}</label>
+                <input
+                  type="number"
+                  value={settingValues[m.key] ?? ""}
+                  onChange={(e) => setSettingValues((v) => ({ ...v, [m.key]: e.target.value }))}
+                  className="w-full py-2 px-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
+                />
+              </div>
+            ))}
+          </div>
+          {settingsMsg && (
+            <p className={`text-sm mt-3 flex items-center gap-1.5 ${settingsMsg.startsWith("ok:") ? "text-emerald-600" : "text-rose-600"}`}>
+              {settingsMsg.startsWith("ok:") ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />} {settingsMsg.slice(settingsMsg.indexOf(":") + 1)}
+            </p>
+          )}
+          <PrimaryButton className="mt-3" onClick={saveSettings} disabled={savingSettings}>
+            {savingSettings ? "Đang lưu..." : "Lưu công thức"}
+          </PrimaryButton>
+        </Card>
+      )}
+
       <Card className="p-4 mb-4 bg-indigo-50/60 border-indigo-100">
         <p className="text-xs text-slate-500 mb-2">Danh sách sản phẩm/dịch vụ hiện có của <span className="font-medium text-slate-700">{activeCompany}</span>:</p>
         <div className="flex flex-wrap gap-1.5">
           {companyProducts.map((p) => <Badge key={p} className="bg-white text-slate-600 border-slate-200">{p}</Badge>)}
         </div>
-        <p className="text-[11px] text-slate-400 mt-2">Đây là danh sách sản phẩm dùng khi tạo đơn hàng (cố định trong hệ thống). Bên dưới là nơi bạn ghi chú tỷ lệ/mức thưởng hoa hồng áp dụng cho từng sản phẩm — chỉ mang tính tham khảo, không tự động thay đổi cách tính hoa hồng thật của đơn hàng.</p>
+        <p className="text-[11px] text-slate-400 mt-2">Đây là danh sách sản phẩm dùng khi tạo đơn hàng (cố định trong hệ thống). Bên dưới là nơi bạn ghi chú thêm — ví dụ điều kiện áp dụng, ghi chú nội bộ — không thay thế công thức tính hoa hồng ở trên.</p>
       </Card>
 
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold text-slate-700">Ghi chú chính sách / hoa hồng đã lưu</p>
+        <p className="text-sm font-semibold text-slate-700">Ghi chú chính sách khác</p>
         {!adding && (
           <PrimaryButton onClick={() => setAdding(true)}><Plus size={15} /> Thêm ghi chú</PrimaryButton>
         )}
@@ -1818,7 +1975,7 @@ function ChinhSachCongTy({ currentUser }) {
                 {companyProducts.map((p) => <option key={p} value={p} />)}
               </datalist>
             </div>
-            <TextAreaField label="Tỷ lệ / mức thưởng hoa hồng, ghi chú" value={commissionNote} onChange={(e) => setCommissionNote(e.target.value)} placeholder="Ví dụ: 3% doanh thu, hoặc 200.000đ/xe..." />
+            <TextAreaField label="Ghi chú" value={commissionNote} onChange={(e) => setCommissionNote(e.target.value)} placeholder="Ghi chú thêm, ví dụ điều kiện áp dụng..." />
           </div>
           {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
           <div className="flex gap-2 mt-3">
@@ -1849,6 +2006,102 @@ function ChinhSachCongTy({ currentUser }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function PhanQuyenPage({ currentUser, onRefresh }) {
+  const [localOverrides, setLocalOverrides] = useState({});
+  const [saving, setSaving] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  const effectiveEnabled = (role, item) => {
+    const dbKey = `${role}:${item.key}`;
+    if (Object.prototype.hasOwnProperty.call(localOverrides, dbKey)) return localOverrides[dbKey];
+    return isNavItemEnabled(role, item);
+  };
+
+  const toggle = async (role, item) => {
+    const dbKey = `${role}:${item.key}`;
+    const next = !effectiveEnabled(role, item);
+    if (role === "admin" && (item.key === "tai_khoan" || item.key === "phan_quyen") && !next) {
+      alert("Không thể tắt mục này cho Admin — để tránh tự khoá mất quyền truy cập vào phần quản trị.");
+      return;
+    }
+    setMsg("");
+    setSaving(dbKey);
+    setLocalOverrides((prev) => ({ ...prev, [dbKey]: next }));
+    const { error } = await supabase
+      .from("role_permissions")
+      .upsert({ role, tab_key: item.key, enabled: next, updated_by_name: currentUser.name, updated_at: new Date().toISOString() }, { onConflict: "role,tab_key" });
+    setSaving(null);
+    if (error) {
+      console.error("save role_permissions error", error);
+      setMsg("error:Không lưu được, vui lòng thử lại.");
+      setLocalOverrides((prev) => ({ ...prev, [dbKey]: !next }));
+      return;
+    }
+    onRefresh?.();
+  };
+
+  return (
+    <div>
+      <SectionTitle icon={Lock} title="Phân quyền" subtitle="Bật/tắt từng mục cho từng vai trò — thay đổi áp dụng ngay lập tức" />
+      {msg && (
+        <p className={`text-sm mb-3 flex items-center gap-1.5 ${msg.startsWith("ok:") ? "text-emerald-600" : "text-rose-600"}`}>
+          <AlertCircle size={14} /> {msg.slice(msg.indexOf(":") + 1)}
+        </p>
+      )}
+      <Card className="p-0 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left p-3 sticky left-0 bg-slate-50 font-semibold text-slate-600 whitespace-nowrap">Mục</th>
+                {ALL_ROLES.map((r) => (
+                  <th key={r} className="p-3 text-center font-medium text-slate-600 whitespace-nowrap text-xs">{ROLE_META[r].short}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {NAV_GROUP_ORDER.map((g) => {
+                const items = NAV_ITEMS.filter((it) => it.groupId === g.id);
+                if (items.length === 0) return null;
+                return (
+                  <React.Fragment key={g.id}>
+                    {g.title && (
+                      <tr>
+                        <td colSpan={ALL_ROLES.length + 1} className="px-3 pt-4 pb-1 text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide bg-white sticky left-0">
+                          {g.title}
+                        </td>
+                      </tr>
+                    )}
+                    {items.map((item) => (
+                      <tr key={item.key} className="border-t border-slate-100">
+                        <td className="p-3 sticky left-0 bg-white whitespace-nowrap">
+                          <span className="flex items-center gap-2 text-slate-700"><item.icon size={14} className="text-slate-400 shrink-0" /> {item.label}</span>
+                        </td>
+                        {ALL_ROLES.map((role) => (
+                          <td key={role} className="p-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={effectiveEnabled(role, item)}
+                              disabled={saving === `${role}:${item.key}`}
+                              onChange={() => toggle(role, item)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-300 disabled:opacity-40"
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <p className="text-[11px] text-slate-400 mt-3">Admin luôn giữ quyền vào "Tài khoản" và "Phân quyền" để tránh tự khoá mất quyền quản trị. Các ô khác bạn có thể bật/tắt tự do cho từng vai trò.</p>
     </div>
   );
 }
@@ -2093,6 +2346,8 @@ export default function App() {
     const finalData = (closedCount > 0 || cancelledCount > 0) ? await fetchAll() : data;
     USERS.length = 0;
     USERS.push(...finalData.employees);
+    COMMISSION_SETTINGS = finalData.commissionSettings || {};
+    ROLE_PERMISSIONS = finalData.rolePermissions || {};
     setCustomers(finalData.customers);
     setOrders(finalData.orders);
     setNotifications(finalData.notifications);
@@ -2132,7 +2387,10 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     const defaults = { dai_su: "khach_hang", xu_ly: "duoc_giao", cht: "phan_cong", ke_toan: "cho_xac_nhan", admin: "bao_cao_cht" };
-    setTab(defaults[currentUser.role]);
+    const preferred = defaults[currentUser.role];
+    const roleGroups = buildNavGroupsForRole(currentUser.role);
+    const allowedKeys = roleGroups.flatMap((g) => g.items.map((i) => i.key));
+    setTab(allowedKeys.includes(preferred) ? preferred : allowedKeys[0]);
   }, [currentUser]);
 
   // ---- Cách ly dữ liệu theo công ty ------------------------------------
@@ -2577,48 +2835,7 @@ export default function App() {
     );
   }
 
-  const GROUP_BAN_HANG = { title: "Bán hàng", items: [
-    { key: "khach_hang", label: "Khách hàng", icon: Users },
-    { key: "don_hang_ds", label: "Đơn hàng của tôi", icon: ClipboardList },
-    { key: "bao_cao_ds", label: "Báo cáo", icon: BarChart3 },
-  ]};
-  const GROUP_CSKH = { title: "Chăm sóc khách hàng", items: [
-    { key: "duoc_giao", label: "Đơn được giao", icon: Inbox },
-    { key: "don_hang_cskh", label: "Đơn hàng CSKH", icon: ClipboardList },
-    { key: "bao_cao_cskh", label: "Báo cáo CSKH", icon: BarChart3 },
-  ]};
-  const GROUP_QUAN_LY = { title: "Quản lý", items: [
-    { key: "phan_cong", label: "Phân công", icon: ArrowRightLeft },
-    { key: "bao_cao_cht", label: "Báo cáo doanh số", icon: BarChart3 },
-  ]};
-  const GROUP_KE_TOAN = { title: "Kế toán", items: [
-    { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
-    { key: "lich_su", label: "Lịch sử", icon: Wallet },
-  ]};
-  const GROUP_BAO_CAO_CTY = { title: null, items: [
-    { key: "bao_cao_cty", label: "Báo cáo công ty", icon: Landmark },
-  ]};
-  const GROUP_THONG_BAO = { title: null, items: [
-    { key: "thong_bao", label: "Thông báo", icon: Megaphone },
-  ]};
-  const GROUP_TAI_KHOAN = { title: "Quản trị", items: [
-    { key: "tai_khoan", label: "Tài khoản", icon: ShieldCheck },
-    { key: "chinh_sach_cty", label: "Chính sách công ty", icon: Building2 },
-  ]};
-  const NAV_GROUPS = {
-    dai_su: [GROUP_BAN_HANG, GROUP_THONG_BAO],
-    xu_ly: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
-    ky_thuat_truong: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
-    le_tan: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
-    cht: [GROUP_BAN_HANG, GROUP_QUAN_LY, GROUP_THONG_BAO],
-    ke_toan: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
-    ke_toan_xe: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
-    ke_toan_bao_hiem: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
-    ke_toan_dich_vu: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
-    ke_toan_kho: [GROUP_BAN_HANG, GROUP_KE_TOAN, GROUP_THONG_BAO],
-    admin: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_QUAN_LY, GROUP_KE_TOAN, GROUP_BAO_CAO_CTY, GROUP_THONG_BAO, GROUP_TAI_KHOAN],
-  };
-  const navGroups = NAV_GROUPS[currentUser.role];
+  const navGroups = useMemo(() => buildNavGroupsForRole(currentUser.role), [currentUser.role, rerenderTick]);
 
   return (
     <div className="min-h-[600px] bg-slate-50 lg:flex">
@@ -2760,7 +2977,7 @@ export default function App() {
         )}
         {tab === "lich_su" && <KeToanLichSu currentUser={currentUser} orders={scopedOrders} />}
 
-        {tab === "bao_cao_cty" && currentUser.role === "admin" && <BaoCaoCongTy orders={scopedOrders} />}
+        {tab === "bao_cao_cty" && isNavItemEnabled(currentUser.role, navItemByKey("bao_cao_cty")) && <BaoCaoCongTy orders={scopedOrders} />}
 
         {tab === "thong_bao" && (
           <AnnouncementsPage
@@ -2774,8 +2991,11 @@ export default function App() {
         {tab === "tai_khoan" && (
           <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} onRefresh={refreshAll} />
         )}
-        {tab === "chinh_sach_cty" && currentUser.role === "admin" && (
-          <ChinhSachCongTy currentUser={currentUser} />
+        {tab === "chinh_sach_cty" && isNavItemEnabled(currentUser.role, navItemByKey("chinh_sach_cty")) && (
+          <ChinhSachCongTy currentUser={currentUser} onRefresh={refreshAll} />
+        )}
+        {tab === "phan_quyen" && isNavItemEnabled(currentUser.role, navItemByKey("phan_quyen")) && (
+          <PhanQuyenPage currentUser={currentUser} onRefresh={refreshAll} />
         )}
         </TabErrorBoundary>
         </div>
@@ -5216,7 +5436,7 @@ function TourForm({ order, onConfirm, onReject, note, setNote }) {
   const qty = Number(quantity) || 0;
   const price = Number(unitPrice) || 0;
   const totalAmount = qty * price;
-  const totalCommission = qty * TOUR_REWARD_PER_CONTRACT;
+  const totalCommission = qty * TOUR_REWARD_PER_CONTRACT();
 
   const handleConfirm = () => {
     if (qty <= 0) { setError("Vui lòng nhập số lượng hợp đồng hợp lệ."); return; }
@@ -5400,19 +5620,19 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
       {order.product === P.PHU_TUNG && <PhuTungKhoForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.SUA_CHUA_XE_MAY && <DichVuSuaChuaForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} zeroByDateRule={zeroByDateRule} />}
       {order.product === P.O_TO && <OTOMoiForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.PHU_KIEN_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={9} />}
+      {order.product === P.PHU_KIEN_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={cs("phu_kien_oto_rate_percent", 9)} />}
       {order.product === P.BAO_HIEM_O_TO && <BaoHiemOTOForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
-      {order.product === P.SUA_CHUA_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />}
+      {order.product === P.SUA_CHUA_O_TO && <ServiceRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={cs("sua_chua_oto_rate_percent", 5)} />}
       {(order.product === P.DAC_SAN || order.product === P.PHONG_NGHI || order.product === P.TIEC) && (
-        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={3} />
+        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={cs("htc_flat_rate_percent", 3)} />
       )}
       {order.product === P.VE_MAY_BAY && <VeMayBayForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
       {order.product === P.TOUR && <TourForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} />}
       {VYC_SPECIAL_PRODUCTS.includes(order.product) && (
-        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={5} />
+        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={cs("vyc_rate_percent", 5)} />
       )}
       {VTNN_SPECIAL_PRODUCTS.includes(order.product) && (
-        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={2} />
+        <FlatRevenueForm order={order} onConfirm={wrappedConfirm} onReject={onReject} note={note} setNote={setNote} ratePercent={cs("vtnn_rate_percent", 2)} />
       )}
     </Card>
   );
