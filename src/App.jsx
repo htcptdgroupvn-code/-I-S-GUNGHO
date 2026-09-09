@@ -1699,6 +1699,160 @@ function ConfirmAdminActionModal({ currentUser, title, description, confirmLabel
   );
 }
 
+function ChinhSachCongTy({ currentUser }) {
+  const [activeCompany, setActiveCompany] = useState(COMPANIES[0].name);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [productName, setProductName] = useState("");
+  const [commissionNote, setCommissionNote] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error: qErr } = await supabase
+      .from("company_policies")
+      .select("*")
+      .eq("company_name", activeCompany)
+      .order("created_at", { ascending: true });
+    if (qErr) console.error("load company_policies error", qErr);
+    setRows(data || []);
+    setLoading(false);
+  }, [activeCompany]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const companyProducts = COMPANIES.find((c) => c.name === activeCompany)?.products || [];
+
+  const resetForm = () => {
+    setAdding(false);
+    setEditingId(null);
+    setProductName("");
+    setCommissionNote("");
+    setError("");
+  };
+
+  const startEdit = (row) => {
+    setEditingId(row.id);
+    setAdding(true);
+    setProductName(row.product_name);
+    setCommissionNote(row.commission_note || "");
+  };
+
+  const submit = async () => {
+    if (!productName.trim()) {
+      setError("Vui lòng chọn hoặc nhập tên sản phẩm/dịch vụ.");
+      return;
+    }
+    setError("");
+    if (editingId) {
+      const { error: qErr } = await supabase
+        .from("company_policies")
+        .update({ product_name: productName.trim(), commission_note: commissionNote, updated_by_name: currentUser.name, updated_at: new Date().toISOString() })
+        .eq("id", editingId);
+      if (qErr) { setError("Không lưu được, vui lòng thử lại."); return; }
+    } else {
+      const { error: qErr } = await supabase
+        .from("company_policies")
+        .insert({ company_name: activeCompany, product_name: productName.trim(), commission_note: commissionNote, updated_by_name: currentUser.name });
+      if (qErr) { setError("Không lưu được, vui lòng thử lại."); return; }
+    }
+    resetForm();
+    load();
+  };
+
+  const remove = async (id) => {
+    if (!window.confirm("Xoá ghi chú chính sách này?")) return;
+    const { error: qErr } = await supabase.from("company_policies").delete().eq("id", id);
+    if (qErr) { alert("Không xoá được, vui lòng thử lại."); return; }
+    load();
+  };
+
+  return (
+    <div>
+      <SectionTitle icon={Building2} title="Chính sách công ty" subtitle="Danh sách sản phẩm/dịch vụ và ghi chú tỷ lệ, mức thưởng hoa hồng theo từng công ty" />
+
+      <div className="flex gap-1 overflow-x-auto mb-4 border-b border-slate-200 no-scrollbar">
+        {COMPANIES.map((c) => (
+          <button
+            key={c.name}
+            onClick={() => { setActiveCompany(c.name); resetForm(); }}
+            className={`px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition ${
+              activeCompany === c.name ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {c.name}
+          </button>
+        ))}
+      </div>
+
+      <Card className="p-4 mb-4 bg-indigo-50/60 border-indigo-100">
+        <p className="text-xs text-slate-500 mb-2">Danh sách sản phẩm/dịch vụ hiện có của <span className="font-medium text-slate-700">{activeCompany}</span>:</p>
+        <div className="flex flex-wrap gap-1.5">
+          {companyProducts.map((p) => <Badge key={p} className="bg-white text-slate-600 border-slate-200">{p}</Badge>)}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-2">Đây là danh sách sản phẩm dùng khi tạo đơn hàng (cố định trong hệ thống). Bên dưới là nơi bạn ghi chú tỷ lệ/mức thưởng hoa hồng áp dụng cho từng sản phẩm — chỉ mang tính tham khảo, không tự động thay đổi cách tính hoa hồng thật của đơn hàng.</p>
+      </Card>
+
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-semibold text-slate-700">Ghi chú chính sách / hoa hồng đã lưu</p>
+        {!adding && (
+          <PrimaryButton onClick={() => setAdding(true)}><Plus size={15} /> Thêm ghi chú</PrimaryButton>
+        )}
+      </div>
+
+      {adding && (
+        <Card className="p-4 mb-4">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Sản phẩm / dịch vụ</label>
+              <input
+                list="policy-product-options"
+                value={productName}
+                onChange={(e) => setProductName(e.target.value)}
+                placeholder="Chọn từ danh sách hoặc nhập tên khác"
+                className="w-full py-2.5 px-3 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
+              />
+              <datalist id="policy-product-options">
+                {companyProducts.map((p) => <option key={p} value={p} />)}
+              </datalist>
+            </div>
+            <TextAreaField label="Tỷ lệ / mức thưởng hoa hồng, ghi chú" value={commissionNote} onChange={(e) => setCommissionNote(e.target.value)} placeholder="Ví dụ: 3% doanh thu, hoặc 200.000đ/xe..." />
+          </div>
+          {error && <p className="text-sm text-rose-600 flex items-center gap-1.5 mt-2"><AlertCircle size={14} /> {error}</p>}
+          <div className="flex gap-2 mt-3">
+            <PrimaryButton onClick={submit}>{editingId ? "Lưu thay đổi" : "Thêm ghi chú"}</PrimaryButton>
+            <GhostButton onClick={resetForm}>Hủy</GhostButton>
+          </div>
+        </Card>
+      )}
+
+      {loading ? (
+        <p className="text-sm text-slate-400">Đang tải...</p>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={Building2} text="Chưa có ghi chú chính sách nào cho công ty này." />
+      ) : (
+        <div className="space-y-2">
+          {rows.map((r) => (
+            <Card key={r.id} className="p-3.5 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-800">{r.product_name}</p>
+                {r.commission_note && <p className="text-sm text-slate-500 mt-0.5 whitespace-pre-wrap">{r.commission_note}</p>}
+                <p className="text-[11px] text-slate-400 mt-1">Cập nhật lần cuối: {fmtDate(r.updated_at)}{r.updated_by_name ? ` bởi ${r.updated_by_name}` : ""}</p>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => startEdit(r)} className="text-slate-400 hover:text-indigo-600 p-1.5"><Pencil size={14} /></button>
+                <button onClick={() => remove(r.id)} className="text-slate-400 hover:text-rose-600 p-1.5"><Trash2 size={14} /></button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminAccountsPage({ currentUser, employees, onRefresh }) {
   const [query, setQuery] = useState("");
   const [resetting, setResetting] = useState(null);
@@ -2423,33 +2577,34 @@ export default function App() {
     );
   }
 
-  const GROUP_BAN_HANG = [
+  const GROUP_BAN_HANG = { title: "Bán hàng", items: [
     { key: "khach_hang", label: "Khách hàng", icon: Users },
     { key: "don_hang_ds", label: "Đơn hàng của tôi", icon: ClipboardList },
     { key: "bao_cao_ds", label: "Báo cáo", icon: BarChart3 },
-  ];
-  const GROUP_CSKH = [
+  ]};
+  const GROUP_CSKH = { title: "Chăm sóc khách hàng", items: [
     { key: "duoc_giao", label: "Đơn được giao", icon: Inbox },
     { key: "don_hang_cskh", label: "Đơn hàng CSKH", icon: ClipboardList },
     { key: "bao_cao_cskh", label: "Báo cáo CSKH", icon: BarChart3 },
-  ];
-  const GROUP_QUAN_LY = [
+  ]};
+  const GROUP_QUAN_LY = { title: "Quản lý", items: [
     { key: "phan_cong", label: "Phân công", icon: ArrowRightLeft },
     { key: "bao_cao_cht", label: "Báo cáo doanh số", icon: BarChart3 },
-  ];
-  const GROUP_KE_TOAN = [
+  ]};
+  const GROUP_KE_TOAN = { title: "Kế toán", items: [
     { key: "cho_xac_nhan", label: "Chờ xác nhận", icon: ClipboardCheck },
     { key: "lich_su", label: "Lịch sử", icon: Wallet },
-  ];
-  const GROUP_BAO_CAO_CTY = [
+  ]};
+  const GROUP_BAO_CAO_CTY = { title: null, items: [
     { key: "bao_cao_cty", label: "Báo cáo công ty", icon: Landmark },
-  ];
-  const GROUP_THONG_BAO = [
+  ]};
+  const GROUP_THONG_BAO = { title: null, items: [
     { key: "thong_bao", label: "Thông báo", icon: Megaphone },
-  ];
-  const GROUP_TAI_KHOAN = [
+  ]};
+  const GROUP_TAI_KHOAN = { title: "Quản trị", items: [
     { key: "tai_khoan", label: "Tài khoản", icon: ShieldCheck },
-  ];
+    { key: "chinh_sach_cty", label: "Chính sách công ty", icon: Building2 },
+  ]};
   const NAV_GROUPS = {
     dai_su: [GROUP_BAN_HANG, GROUP_THONG_BAO],
     xu_ly: [GROUP_BAN_HANG, GROUP_CSKH, GROUP_THONG_BAO],
@@ -2471,33 +2626,59 @@ export default function App() {
       <UrgentAnnouncementModal currentUser={currentUser} announcements={announcements} />
 
       {/* Sidebar cố định bên trái — chỉ hiện trên máy tính/tablet ngang, kiểu giống app Công nợ HTC */}
-      <aside className="hidden lg:flex lg:flex-col w-64 shrink-0 bg-white border-r border-slate-200 lg:h-screen lg:sticky lg:top-0">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2.5">
-          <img src="/logo.jpg" alt="Logo" className="w-9 h-9 rounded-full bg-white border border-slate-200 object-contain shrink-0" />
+      <aside className="hidden lg:flex lg:flex-col w-64 shrink-0 bg-slate-900 lg:h-screen lg:sticky lg:top-0">
+        <div className="px-5 py-4 border-b border-slate-700 flex items-center gap-2.5">
+          <img src="/logo.jpg" alt="Logo" className="w-9 h-9 rounded-full bg-white object-contain shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
+            <p className="text-sm font-bold text-white leading-tight tracking-tight">GUNGHO PTD</p>
             <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
           </div>
         </div>
-        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+        <div className="px-4 py-3 border-b border-slate-700 flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-indigo-500 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+            {currentUser.name.split(" ").slice(-1)[0][0]}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-white truncate">{currentUser.name}</p>
+            <p className="text-xs text-slate-400 truncate">{currentUser.store || ROLE_META[currentUser.role]?.short}</p>
+          </div>
+        </div>
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
           {navGroups.map((group, gi) => (
-            <div key={gi} className="space-y-0.5">
-              {group.map((n) => (
-                <button
-                  key={n.key}
-                  onClick={() => setTab(n.key)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition text-left ${
-                    tab === n.key
-                      ? "bg-indigo-600 text-white"
-                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                  }`}
-                >
-                  <n.icon size={16} className="shrink-0" /> {n.label}
-                </button>
-              ))}
+            <div key={gi}>
+              {group.title && <p className="px-3 mb-1 text-[10.5px] font-semibold text-slate-500 uppercase tracking-wide">{group.title}</p>}
+              <div className="space-y-0.5">
+                {group.items.map((n) => (
+                  <button
+                    key={n.key}
+                    onClick={() => setTab(n.key)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition text-left ${
+                      tab === n.key
+                        ? "bg-indigo-600 text-white"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <n.icon size={16} className="shrink-0" /> {n.label}
+                  </button>
+                ))}
+              </div>
             </div>
           ))}
         </nav>
+        <div className="px-2 py-3 border-t border-slate-700">
+          <button
+            onClick={() => setShowChangePassword(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-slate-800 hover:text-white transition"
+          >
+            <Lock size={16} className="shrink-0" /> Đổi mật khẩu
+          </button>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:bg-rose-900/40 hover:text-rose-300 transition"
+          >
+            <LogOut size={16} className="shrink-0" /> Đăng xuất
+          </button>
+        </div>
       </aside>
 
       {/* Cột nội dung bên phải */}
@@ -2592,6 +2773,9 @@ export default function App() {
         )}
         {tab === "tai_khoan" && (
           <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} onRefresh={refreshAll} />
+        )}
+        {tab === "chinh_sach_cty" && currentUser.role === "admin" && (
+          <ChinhSachCongTy currentUser={currentUser} />
         )}
         </TabErrorBoundary>
         </div>
