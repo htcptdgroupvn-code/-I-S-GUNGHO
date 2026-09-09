@@ -713,19 +713,24 @@ const NAV_ITEMS = [
 ];
 
 // Phân quyền thật — nạp từ bảng `role_permissions` trên Supabase khi khởi động.
-// Key dạng "role:tab_key" -> true/false. Nếu (role, tab_key) chưa có dòng nào,
-// dùng defaultRoles của mục đó (an toàn tuyệt đối trước khi ai chỉnh sửa gì).
+// Key dạng "company:role:tab_key" -> true/false. Admin công ty nào chỉnh phân
+// quyền thì chỉ lưu dưới đúng company đó, không ảnh hưởng công ty khác. Nếu
+// (company, role, tab_key) chưa có dòng nào, thử tiếp mức "ALL:role:tab_key"
+// (mặc định chung do Super chỉnh, nếu có), cuối cùng mới rơi về defaultRoles
+// của mục đó (an toàn tuyệt đối trước khi ai chỉnh sửa gì).
 let ROLE_PERMISSIONS = {};
-function isNavItemEnabled(role, item) {
+function isNavItemEnabled(role, item, company) {
   // Khoá an toàn: Admin luôn thấy Tài khoản + Phân quyền, tránh tự khoá mất quyền truy cập chính mình.
   if (role === "admin" && (item.key === "tai_khoan" || item.key === "phan_quyen")) return true;
-  const dbKey = `${role}:${item.key}`;
-  if (Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, dbKey)) return !!ROLE_PERMISSIONS[dbKey];
+  const companyKey = `${company || "ALL"}:${role}:${item.key}`;
+  if (Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, companyKey)) return !!ROLE_PERMISSIONS[companyKey];
+  const globalKey = `ALL:${role}:${item.key}`;
+  if (Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, globalKey)) return !!ROLE_PERMISSIONS[globalKey];
   return item.defaultRoles.includes(role);
 }
-function buildNavGroupsForRole(role) {
+function buildNavGroupsForRole(role, company) {
   return NAV_GROUP_ORDER
-    .map((g) => ({ title: g.title, items: NAV_ITEMS.filter((it) => it.groupId === g.id && isNavItemEnabled(role, it)) }))
+    .map((g) => ({ title: g.title, items: NAV_ITEMS.filter((it) => it.groupId === g.id && isNavItemEnabled(role, it, company)) }))
     .filter((g) => g.items.length > 0);
 }
 function navItemByKey(key) {
@@ -955,7 +960,7 @@ async function fetchAll() {
     supabase.from("notifications").select("*").order("created_at", { ascending: false }),
     supabase.from("announcements").select("*").order("created_at", { ascending: false }),
     supabase.from("commission_settings").select("key,value"),
-    supabase.from("role_permissions").select("role,tab_key,enabled"),
+    supabase.from("role_permissions").select("company,role,tab_key,enabled"),
   ]);
   if (emp.error) console.error("fetch employees error", emp.error);
   if (cust.error) console.error("fetch customers error", cust.error);
@@ -971,7 +976,7 @@ async function fetchAll() {
     notifications: (notif.data || []).map(mapNotification),
     announcements: (announ.data || []).map(mapAnnouncement),
     commissionSettings: Object.fromEntries((cset.data || []).map((r) => [r.key, r.value])),
-    rolePermissions: Object.fromEntries((rperm.data || []).map((r) => [`${r.role}:${r.tab_key}`, !!r.enabled])),
+    rolePermissions: Object.fromEntries((rperm.data || []).map((r) => [`${r.company || "ALL"}:${r.role}:${r.tab_key}`, !!r.enabled])),
   };
 }
 
@@ -2070,32 +2075,20 @@ function ChinhSachCongTy({ currentUser, onRefresh, myCompanies }) {
   );
 }
 
-function PhanQuyenPage({ currentUser, onRefresh, canManage }) {
+function PhanQuyenPage({ currentUser, onRefresh, myCompanies }) {
+  const [activeCompany, setActiveCompany] = useState(myCompanies[0] || "ALL");
   const [localOverrides, setLocalOverrides] = useState({});
   const [saving, setSaving] = useState(null);
   const [msg, setMsg] = useState("");
 
-  if (!canManage) {
-    return (
-      <div>
-        <SectionTitle icon={Lock} title="Phân quyền" subtitle="Bật/tắt từng mục cho từng vai trò — thay đổi áp dụng ngay lập tức" />
-        <Card className="p-6 text-center">
-          <ShieldCheck size={28} className="text-slate-300 mx-auto mb-2" />
-          <p className="font-medium text-slate-700 mb-1">Chỉ tài khoản quản trị nhiều công ty mới chỉnh được mục này</p>
-          <p className="text-sm text-slate-500">Phân quyền là cấu hình dùng chung cho toàn hệ thống (áp dụng cho mọi công ty), không riêng theo từng công ty — nên chỉ tài khoản Admin được gán xem nhiều công ty mới có quyền chỉnh sửa.</p>
-        </Card>
-      </div>
-    );
-  }
-
   const effectiveEnabled = (role, item) => {
-    const dbKey = `${role}:${item.key}`;
+    const dbKey = `${activeCompany}:${role}:${item.key}`;
     if (Object.prototype.hasOwnProperty.call(localOverrides, dbKey)) return localOverrides[dbKey];
-    return isNavItemEnabled(role, item);
+    return isNavItemEnabled(role, item, activeCompany);
   };
 
   const toggle = async (role, item) => {
-    const dbKey = `${role}:${item.key}`;
+    const dbKey = `${activeCompany}:${role}:${item.key}`;
     const next = !effectiveEnabled(role, item);
     if (role === "admin" && (item.key === "tai_khoan" || item.key === "phan_quyen") && !next) {
       alert("Không thể tắt mục này cho Admin — để tránh tự khoá mất quyền truy cập vào phần quản trị.");
@@ -2106,7 +2099,7 @@ function PhanQuyenPage({ currentUser, onRefresh, canManage }) {
     setLocalOverrides((prev) => ({ ...prev, [dbKey]: next }));
     const { error } = await supabase
       .from("role_permissions")
-      .upsert({ role, tab_key: item.key, enabled: next, updated_by_name: currentUser.name, updated_at: new Date().toISOString() }, { onConflict: "role,tab_key" });
+      .upsert({ company: activeCompany, role, tab_key: item.key, enabled: next, updated_by_name: currentUser.name, updated_at: new Date().toISOString() }, { onConflict: "company,role,tab_key" });
     setSaving(null);
     if (error) {
       console.error("save role_permissions error", error);
@@ -2119,7 +2112,24 @@ function PhanQuyenPage({ currentUser, onRefresh, canManage }) {
 
   return (
     <div>
-      <SectionTitle icon={Lock} title="Phân quyền" subtitle="Bật/tắt từng mục cho từng vai trò — thay đổi áp dụng ngay lập tức" />
+      <SectionTitle icon={Lock} title="Phân quyền" subtitle={myCompanies.length > 1 ? "Bật/tắt từng mục cho từng vai trò, riêng theo từng công ty" : `Bật/tắt từng mục cho từng vai trò trong ${activeCompany}`} />
+
+      {myCompanies.length > 1 && (
+        <div className="flex gap-1 overflow-x-auto mb-4 border-b border-slate-200 no-scrollbar">
+          {myCompanies.map((c) => (
+            <button
+              key={c}
+              onClick={() => { setActiveCompany(c); setLocalOverrides({}); setMsg(""); }}
+              className={`px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition ${
+                activeCompany === c ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+
       {msg && (
         <p className={`text-sm mb-3 flex items-center gap-1.5 ${msg.startsWith("ok:") ? "text-emerald-600" : "text-rose-600"}`}>
           <AlertCircle size={14} /> {msg.slice(msg.indexOf(":") + 1)}
@@ -2159,7 +2169,7 @@ function PhanQuyenPage({ currentUser, onRefresh, canManage }) {
                             <input
                               type="checkbox"
                               checked={effectiveEnabled(role, item)}
-                              disabled={saving === `${role}:${item.key}`}
+                              disabled={saving === `${activeCompany}:${role}:${item.key}`}
                               onChange={() => toggle(role, item)}
                               className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-300 disabled:opacity-40"
                             />
@@ -2174,7 +2184,7 @@ function PhanQuyenPage({ currentUser, onRefresh, canManage }) {
           </table>
         </div>
       </Card>
-      <p className="text-[11px] text-slate-400 mt-3">Admin luôn giữ quyền vào "Tài khoản" và "Phân quyền" để tránh tự khoá mất quyền quản trị. Các ô khác bạn có thể bật/tắt tự do cho từng vai trò.</p>
+      <p className="text-[11px] text-slate-400 mt-3">Admin luôn giữ quyền vào "Tài khoản" và "Phân quyền" để tránh tự khoá mất quyền quản trị. {myCompanies.length > 1 ? "Chọn đúng công ty ở tab phía trên trước khi chỉnh — mỗi công ty có phân quyền riêng, không ảnh hưởng lẫn nhau." : "Thay đổi ở đây chỉ áp dụng cho nhân viên thuộc công ty của bạn."}</p>
     </div>
   );
 }
@@ -2660,13 +2670,14 @@ export default function App() {
     if (!currentUser) return;
     const defaults = { dai_su: "khach_hang", xu_ly: "duoc_giao", cht: "phan_cong", ke_toan: "cho_xac_nhan", admin: "bao_cao_cht" };
     const preferred = defaults[currentUser.role];
-    const roleGroups = buildNavGroupsForRole(currentUser.role);
+    const roleGroups = buildNavGroupsForRole(currentUser.role, companyOfStore(currentUser.store));
     const allowedKeys = roleGroups.flatMap((g) => g.items.map((i) => i.key));
     setTab(allowedKeys.includes(preferred) ? preferred : allowedKeys[0]);
   }, [currentUser]);
 
   // ---- Cách ly dữ liệu theo công ty ------------------------------------
   const myCompanies = useMemo(() => allowedCompaniesFor(currentUser), [currentUser]);
+  const myOwnCompany = companyOfStore(currentUser.store);
   // Nếu tài khoản được gán nhiều công ty, mặc định chọn công ty đầu tiên; nếu
   // chỉ có 1 công ty thì không cần ô chọn (activeCompany rỗng = dùng cả myCompanies).
   useEffect(() => {
@@ -3135,7 +3146,7 @@ export default function App() {
     );
   }
 
-  const navGroups = buildNavGroupsForRole(currentUser.role);
+  const navGroups = buildNavGroupsForRole(currentUser.role, myOwnCompany);
 
   return (
     <div className="min-h-[600px] bg-slate-50 lg:flex">
@@ -3278,7 +3289,7 @@ export default function App() {
         )}
         {tab === "lich_su" && <KeToanLichSu currentUser={currentUser} orders={scopedOrders} />}
 
-        {tab === "bao_cao_cty" && isNavItemEnabled(currentUser.role, navItemByKey("bao_cao_cty")) && <BaoCaoCongTy orders={scopedOrders} />}
+        {tab === "bao_cao_cty" && isNavItemEnabled(currentUser.role, navItemByKey("bao_cao_cty"), myOwnCompany) && <BaoCaoCongTy orders={scopedOrders} />}
 
         {tab === "thong_bao" && (
           <AnnouncementsPage
@@ -3292,11 +3303,11 @@ export default function App() {
         {tab === "tai_khoan" && (
           <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} onRefresh={refreshAll} myCompanies={myCompanies} />
         )}
-        {tab === "chinh_sach_cty" && isNavItemEnabled(currentUser.role, navItemByKey("chinh_sach_cty")) && (
+        {tab === "chinh_sach_cty" && isNavItemEnabled(currentUser.role, navItemByKey("chinh_sach_cty"), myOwnCompany) && (
           <ChinhSachCongTy currentUser={currentUser} onRefresh={refreshAll} myCompanies={myCompanies} />
         )}
-        {tab === "phan_quyen" && isNavItemEnabled(currentUser.role, navItemByKey("phan_quyen")) && (
-          <PhanQuyenPage currentUser={currentUser} onRefresh={refreshAll} canManage={myCompanies.length > 1} />
+        {tab === "phan_quyen" && isNavItemEnabled(currentUser.role, navItemByKey("phan_quyen"), myOwnCompany) && (
+          <PhanQuyenPage currentUser={currentUser} onRefresh={refreshAll} myCompanies={myCompanies} />
         )}
         {tab === "xuat_bao_cao" && (
           <XuatBaoCaoPage currentUser={currentUser} orders={scopedOrders} myCompanies={myCompanies} />
