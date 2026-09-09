@@ -2787,7 +2787,7 @@ export default function App() {
           {navGroups.map((group, gi) => (
             <React.Fragment key={gi}>
               {gi > 0 && <span className="w-px h-7 bg-slate-200 mx-1 shrink-0" />}
-              {group.map((n) => (
+              {group.items.map((n) => (
                 <button
                   key={n.key}
                   onClick={() => setTab(n.key)}
