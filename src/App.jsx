@@ -3083,6 +3083,8 @@ function AnnouncementsPage({ currentUser, announcements, onAdd, onUpdate, onDele
 
 function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const [showForm, setShowForm] = useState(false);
+  const [groupKey, setGroupKey] = useState("");
+  const [query, setQuery] = useState("");
   const isAdmin = currentUser.role === "admin";
   const isCht = currentUser.role === "cht";
   // CHT chỉ xem khách hàng/đơn hàng của Store mình quản lý; các vai trò khác chỉ xem dữ liệu do chính mình tạo
@@ -3092,6 +3094,11 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
     ? customers.filter((c) => orders.some((o) => o.customerId === c.id && o.store === currentUser.store))
     : customers.filter((c) => c.createdBy === currentUser.id);
   const mineOrders = (isAdmin ? orders : isCht ? orders.filter((o) => o.store === currentUser.store) : orders.filter((o) => o.createdBy === currentUser.id)).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const activeGroup = ORDER_GROUPS.find((g) => g.key === groupKey);
+  const q = query.trim().toLowerCase();
+  const displayedOrders = mineOrders
+    .filter((o) => !activeGroup || activeGroup.statuses.includes(o.status))
+    .filter((o) => !q || o.customerName?.toLowerCase().includes(q) || o.customerPhone?.includes(q) || (o.orderCode || "").toLowerCase().includes(q));
 
   const defaultBranch = branchInfo(currentUser.store) || ALL_BRANCHES[0];
   const defaultProducts = COMPANIES.find((c) => c.name === defaultBranch.company)?.products || [];
@@ -3235,11 +3242,51 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
         </Card>
       )}
 
+      {mineOrders.length > 0 && (
+        <>
+          <div className="relative mb-3">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Tìm theo tên khách hàng, SĐT hoặc mã đơn..."
+              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
+            />
+          </div>
+          <div className="flex gap-1 overflow-x-auto mb-4 border-b border-slate-200 no-scrollbar">
+            <button
+              onClick={() => setGroupKey("")}
+              className={`px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition ${
+                !groupKey ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Tất cả <span className="text-xs text-slate-400">({mineOrders.length})</span>
+            </button>
+            {ORDER_GROUPS.map((g) => {
+              const count = mineOrders.filter((o) => g.statuses.includes(o.status)).length;
+              return (
+                <button
+                  key={g.key}
+                  onClick={() => setGroupKey(g.key)}
+                  className={`px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition ${
+                    groupKey === g.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {g.label} <span className="text-xs text-slate-400">({count})</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
       {mineOrders.length === 0 ? (
         <EmptyState icon={ClipboardList} text="Chưa có đơn hàng nào." />
+      ) : displayedOrders.length === 0 ? (
+        <EmptyState icon={Search} text="Không có đơn hàng nào khớp với bộ lọc." />
       ) : (
         <div className="space-y-2">
-          {mineOrders.map((o) => <OrderRow key={o.id} order={o} showCommission />)}
+          {displayedOrders.map((o) => <OrderRow key={o.id} order={o} showCommission />)}
         </div>
       )}
     </div>
@@ -3904,14 +3951,54 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
 
 function XuLyDuocGiao({ currentUser, orders, onConfirm, onForward, onDecline }) {
   const isAdmin = currentUser.role === "admin";
-  const mine = orders
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const all = orders
     .filter((o) => (isAdmin || o.assignedHandler === currentUser.id) && ["cho_xu_ly", "dang_cham_soc"].includes(o.status))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const q = query.trim().toLowerCase();
+  const mine = all
+    .filter((o) => !statusFilter || o.status === statusFilter)
+    .filter((o) => !q || o.customerName?.toLowerCase().includes(q) || o.customerPhone?.includes(q) || (o.orderCode || "").toLowerCase().includes(q));
+  const newCount = all.filter((o) => o.status === "cho_xu_ly").length;
+  const caringCount = all.filter((o) => o.status === "dang_cham_soc").length;
   return (
     <div>
-      <SectionTitle icon={Inbox} title="Đơn hàng được giao" subtitle={`${mine.length} đơn đang chờ bạn xử lý`} />
-      {mine.length === 0 ? (
+      <SectionTitle icon={Inbox} title="Đơn hàng được giao" subtitle={`${all.length} đơn đang chờ bạn xử lý`} />
+      {all.length > 0 && (
+        <>
+          <div className="relative mb-3">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Tìm theo tên khách hàng, SĐT hoặc mã đơn..."
+              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
+            />
+          </div>
+          <div className="flex gap-1 overflow-x-auto mb-4 border-b border-slate-200 no-scrollbar">
+            {[
+              { key: "", label: "Tất cả", count: all.length },
+              { key: "cho_xu_ly", label: "Mới giao", count: newCount },
+              { key: "dang_cham_soc", label: "Đang chăm sóc", count: caringCount },
+            ].map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setStatusFilter(t.key)}
+                className={`px-3.5 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition ${
+                  statusFilter === t.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {t.label} <span className="text-xs text-slate-400">({t.count})</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {all.length === 0 ? (
         <EmptyState icon={Inbox} text="Hiện chưa có đơn hàng nào được giao cho bạn." />
+      ) : mine.length === 0 ? (
+        <EmptyState icon={Search} text="Không có đơn hàng nào khớp với bộ lọc." />
       ) : (
         <div className="space-y-3">
           {mine.map((o) => (
@@ -5137,13 +5224,16 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
 function KeToanChoXacNhan({ currentUser, orders, onConfirm, onReject }) {
   const isAdmin = currentUser.role === "admin";
   const [storeFilter, setStoreFilter] = useState("");
+  const [query, setQuery] = useState("");
   const effectiveStore = isAdmin ? storeFilter : currentUser.store;
   const specialtyProducts = KE_TOAN_SPECIALTY_PRODUCTS[currentUser.role] || null;
 
+  const q = query.trim().toLowerCase();
   const pending = orders
     .filter((o) => o.status === "cho_ke_toan")
     .filter((o) => !effectiveStore || o.store === effectiveStore)
     .filter((o) => !specialtyProducts || specialtyProducts.includes(o.product))
+    .filter((o) => !q || o.customerName?.toLowerCase().includes(q) || o.customerPhone?.includes(q) || (o.orderCode || "").toLowerCase().includes(q))
     .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
   return (
@@ -5161,6 +5251,15 @@ function KeToanChoXacNhan({ currentUser, orders, onConfirm, onReject }) {
             </SelectField>
           </div>
         )}
+      </div>
+      <div className="relative mb-4">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Tìm theo tên khách hàng, SĐT hoặc mã đơn..."
+          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 text-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
+        />
       </div>
       {pending.length === 0 ? (
         <EmptyState icon={ClipboardCheck} text="Không có đơn hàng nào chờ xác nhận." />
