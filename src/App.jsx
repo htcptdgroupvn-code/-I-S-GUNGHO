@@ -2835,7 +2835,7 @@ export default function App() {
     );
   }
 
-  const navGroups = useMemo(() => buildNavGroupsForRole(currentUser.role), [currentUser.role, rerenderTick]);
+  const navGroups = buildNavGroupsForRole(currentUser.role);
 
   return (
     <div className="min-h-[600px] bg-slate-50 lg:flex">
