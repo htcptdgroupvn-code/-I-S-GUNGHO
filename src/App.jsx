@@ -2677,7 +2677,7 @@ export default function App() {
 
   // ---- Cách ly dữ liệu theo công ty ------------------------------------
   const myCompanies = useMemo(() => allowedCompaniesFor(currentUser), [currentUser]);
-  const myOwnCompany = companyOfStore(currentUser.store);
+  const myOwnCompany = currentUser ? companyOfStore(currentUser.store) : null;
   // Nếu tài khoản được gán nhiều công ty, mặc định chọn công ty đầu tiên; nếu
   // chỉ có 1 công ty thì không cần ô chọn (activeCompany rỗng = dùng cả myCompanies).
   useEffect(() => {
