@@ -1700,6 +1700,7 @@ function CreateEmployeeModal({ currentUser, onClose, onSuccess, initialRole, ini
 }
 
 function EditEmployeeModal({ currentUser, employee, onClose, onSuccess }) {
+  const grantableCompanies = allowedCompaniesFor(currentUser);
   const [adminPassword, setAdminPassword] = useState("");
   const [name, setName] = useState(employee.name || "");
   const [role, setRole] = useState(employee.role);
@@ -1777,7 +1778,7 @@ function EditEmployeeModal({ currentUser, employee, onClose, onSuccess }) {
             <p className="text-sm font-medium text-slate-700 mb-1.5">Cho xem thêm công ty khác (tuỳ chọn)</p>
             <p className="text-[11px] text-slate-400 mb-2">Để trống = chỉ xem đúng công ty của chi nhánh phía trên.</p>
             <div className="space-y-1.5">
-              {COMPANIES.map((c) => (
+              {COMPANIES.filter((c) => grantableCompanies.includes(c.name)).map((c) => (
                 <label key={c.name} className="flex items-center gap-2 text-sm text-slate-600">
                   <input type="checkbox" checked={visibleCompanies.includes(c.name)} onChange={() => toggleCompany(c.name)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-300" />
                   {c.name}
@@ -1843,8 +1844,9 @@ function ConfirmAdminActionModal({ currentUser, title, description, confirmLabel
   );
 }
 
-function ChinhSachCongTy({ currentUser, onRefresh }) {
-  const [activeCompany, setActiveCompany] = useState(COMPANIES[0].name);
+function ChinhSachCongTy({ currentUser, onRefresh, myCompanies }) {
+  const visibleCompanies = COMPANIES.filter((c) => myCompanies.includes(c.name));
+  const [activeCompany, setActiveCompany] = useState(visibleCompanies[0]?.name || COMPANIES[0].name);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -1951,7 +1953,7 @@ function ChinhSachCongTy({ currentUser, onRefresh }) {
       <SectionTitle icon={Building2} title="Chính sách công ty" subtitle="Công thức tính hoa hồng thật, danh sách sản phẩm/dịch vụ và ghi chú theo từng công ty" />
 
       <div className="flex gap-1 overflow-x-auto mb-4 border-b border-slate-200 no-scrollbar">
-        {COMPANIES.map((c) => (
+        {visibleCompanies.map((c) => (
           <button
             key={c.name}
             onClick={() => { setActiveCompany(c.name); resetForm(); }}
@@ -2068,10 +2070,23 @@ function ChinhSachCongTy({ currentUser, onRefresh }) {
   );
 }
 
-function PhanQuyenPage({ currentUser, onRefresh }) {
+function PhanQuyenPage({ currentUser, onRefresh, canManage }) {
   const [localOverrides, setLocalOverrides] = useState({});
   const [saving, setSaving] = useState(null);
   const [msg, setMsg] = useState("");
+
+  if (!canManage) {
+    return (
+      <div>
+        <SectionTitle icon={Lock} title="Phân quyền" subtitle="Bật/tắt từng mục cho từng vai trò — thay đổi áp dụng ngay lập tức" />
+        <Card className="p-6 text-center">
+          <ShieldCheck size={28} className="text-slate-300 mx-auto mb-2" />
+          <p className="font-medium text-slate-700 mb-1">Chỉ tài khoản quản trị nhiều công ty mới chỉnh được mục này</p>
+          <p className="text-sm text-slate-500">Phân quyền là cấu hình dùng chung cho toàn hệ thống (áp dụng cho mọi công ty), không riêng theo từng công ty — nên chỉ tài khoản Admin được gán xem nhiều công ty mới có quyền chỉnh sửa.</p>
+        </Card>
+      </div>
+    );
+  }
 
   const effectiveEnabled = (role, item) => {
     const dbKey = `${role}:${item.key}`;
@@ -2332,7 +2347,7 @@ function AccountsTable({ currentUser, members, onEdit, onReset, onToggleStatus, 
   );
 }
 
-function AdminAccountsPage({ currentUser, employees, onRefresh }) {
+function AdminAccountsPage({ currentUser, employees, onRefresh, myCompanies }) {
   const [query, setQuery] = useState("");
   const [resetting, setResetting] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -2347,8 +2362,10 @@ function AdminAccountsPage({ currentUser, employees, onRefresh }) {
     ? employees.filter((e) => e.name?.toLowerCase().includes(q) || e.employeeCode?.toLowerCase().includes(q) || e.store?.toLowerCase().includes(q))
     : employees;
 
-  // Nhóm theo từng công ty (suy ra từ chi nhánh) để dễ thấy công ty nào chưa có Admin
-  const groupsByCompany = COMPANIES.map((c) => ({
+  // Nhóm theo từng công ty (suy ra từ chi nhánh) — chỉ những công ty tài khoản
+  // này thực sự được xem, để dễ thấy công ty nào chưa có Admin.
+  const visibleCompanies = COMPANIES.filter((c) => myCompanies.includes(c.name));
+  const groupsByCompany = visibleCompanies.map((c) => ({
     company: c,
     members: filtered.filter((e) => companyOfStore(e.store) === c.name),
   }));
@@ -3273,13 +3290,13 @@ export default function App() {
           />
         )}
         {tab === "tai_khoan" && (
-          <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} onRefresh={refreshAll} />
+          <AdminAccountsPage currentUser={currentUser} employees={scopedEmployees} onRefresh={refreshAll} myCompanies={myCompanies} />
         )}
         {tab === "chinh_sach_cty" && isNavItemEnabled(currentUser.role, navItemByKey("chinh_sach_cty")) && (
-          <ChinhSachCongTy currentUser={currentUser} onRefresh={refreshAll} />
+          <ChinhSachCongTy currentUser={currentUser} onRefresh={refreshAll} myCompanies={myCompanies} />
         )}
         {tab === "phan_quyen" && isNavItemEnabled(currentUser.role, navItemByKey("phan_quyen")) && (
-          <PhanQuyenPage currentUser={currentUser} onRefresh={refreshAll} />
+          <PhanQuyenPage currentUser={currentUser} onRefresh={refreshAll} canManage={myCompanies.length > 1} />
         )}
         {tab === "xuat_bao_cao" && (
           <XuatBaoCaoPage currentUser={currentUser} orders={scopedOrders} myCompanies={myCompanies} />
