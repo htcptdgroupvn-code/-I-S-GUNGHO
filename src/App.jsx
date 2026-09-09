@@ -2549,11 +2549,17 @@ export default function App() {
 
   const createOrder = async ({ customerId, company, store, storeAddress, product, handlerId, expectedServiceDate }) => {
     const cust = customers.find((c) => c.id === customerId);
-    // Khối TM1 - sản phẩm Bảo hiểm xe máy: chuyển thẳng đến Kế toán bảo hiểm của
-    // Store tương ứng ngay khi tạo đơn, bỏ qua hoàn toàn bước CHT phân công / CSKH.
-    const isTM1DirectInsurance = company === TM1_COMPANY_NAME && product === P.BAO_HIEM_XE_MAY;
-    const handler = !isTM1DirectInsurance && handlerId ? userById(handlerId) : null;
-    const status = isTM1DirectInsurance ? "cho_ke_toan" : (handler ? "cho_xu_ly" : "cho_phan_cong");
+    // Khối TM1 - một số sản phẩm chuyển thẳng đến đúng nhóm Kế toán chuyên trách của
+    // Store tương ứng ngay khi tạo đơn, bỏ qua hoàn toàn bước CHT phân công / CSKH:
+    //  - Bảo hiểm xe máy -> Kế toán bảo hiểm
+    //  - Phụ tùng bán lẻ -> Kế toán kho
+    const directRole = company === TM1_COMPANY_NAME
+      ? (product === P.BAO_HIEM_XE_MAY ? "ke_toan_bao_hiem" : product === P.PHU_TUNG ? "ke_toan_kho" : null)
+      : null;
+    const isTM1Direct = !!directRole;
+    const handler = !isTM1Direct && handlerId ? userById(handlerId) : null;
+    const status = isTM1Direct ? "cho_ke_toan" : (handler ? "cho_xu_ly" : "cho_phan_cong");
+    const directLabel = directRole === "ke_toan_bao_hiem" ? "Kế toán bảo hiểm" : directRole === "ke_toan_kho" ? "Kế toán kho" : "";
     const orderDraft = {
       orderCode: genOrderCode(orders),
       customerId, customerName: cust?.name, customerPhone: cust?.phone, customerCode: cust?.customerCode, customerAddress: cust?.address || "",
@@ -2563,8 +2569,8 @@ export default function App() {
       status, handlerNote: "", discountAmount: 0, commissionAmount: 0, accountantNote: "",
       history: [
         `${fmtDate(new Date().toISOString())} — ${currentUser.name} tạo đơn hàng`,
-        ...(isTM1DirectInsurance
-          ? [`${fmtDate(new Date().toISOString())} — Hệ thống tự động chuyển thẳng đơn bảo hiểm xe máy (TM1) đến Kế toán bảo hiểm, bỏ qua bước CSKH`]
+        ...(isTM1Direct
+          ? [`${fmtDate(new Date().toISOString())} — Hệ thống tự động chuyển thẳng đơn đến ${directLabel} (TM1), bỏ qua bước CSKH`]
           : []),
       ],
     };
@@ -2578,15 +2584,15 @@ export default function App() {
     setOrders((prev) => [order, ...prev]);
 
     let notifRows = [];
-    if (isTM1DirectInsurance) {
-      // Ưu tiên đúng Kế toán bảo hiểm của Store; nếu Store chưa có tài khoản
+    if (isTM1Direct) {
+      // Ưu tiên đúng Kế toán chuyên trách của Store; nếu Store chưa có tài khoản
       // chuyên trách thì rơi về Kế toán thường của Store; cuối cùng mới rơi về
       // toàn bộ nhóm kế toán (giống quy tắc fallback đang dùng ở forwardToAccounting).
-      const specialtyAccountants = USERS.filter((u) => u.role === "ke_toan_bao_hiem" && u.store === store);
+      const specialtyAccountants = USERS.filter((u) => u.role === directRole && u.store === store);
       const storeAccountants = specialtyAccountants.length > 0 ? specialtyAccountants : USERS.filter((u) => u.role === "ke_toan" && u.store === store);
       const targets = storeAccountants.length > 0 ? storeAccountants : USERS.filter((u) => KE_TOAN_ROLES.includes(u.role));
       targets.forEach((kt) => {
-        notifRows.push(notifRow(kt.id, `Có đơn hàng bảo hiểm xe máy mới (TM1) cần xác nhận thanh toán (khách "${cust?.name}").`, order.id));
+        notifRows.push(notifRow(kt.id, `Có đơn hàng ${product} mới (TM1) cần xác nhận thanh toán (khách "${cust?.name}").`, order.id));
       });
     } else if (handler) {
       notifRows.push(notifRow(handler.id, `Bạn được giao chăm sóc đơn hàng của khách "${cust?.name}" (${product}).`, order.id));
@@ -2599,7 +2605,22 @@ export default function App() {
     }
     await insertNotifications(notifRows);
     await refreshAll();
-    showToast(isTM1DirectInsurance ? "Đã tạo đơn hàng — chuyển thẳng Kế toán bảo hiểm" : "Đã tạo đơn hàng");
+    showToast(isTM1Direct ? `Đã tạo đơn hàng — chuyển thẳng ${directLabel}` : "Đã tạo đơn hàng");
+    return order;
+  };
+
+  // Đại sứ tải ảnh giấy tờ bảo hiểm ngay lúc tạo đơn (không cần đợi Kế toán) — Kế
+  // toán bảo hiểm sẽ thấy lại ảnh này khi xác nhận thanh toán.
+  const saveInsuranceDocForOrder = async (orderId, { insuranceDocType, insuranceDocUrl }) => {
+    const { error } = await supabase.from("orders").update({
+      insurance_doc_type: insuranceDocType || null, insurance_doc_url: insuranceDocUrl || null, updated_at: new Date().toISOString(),
+    }).eq("id", orderId);
+    if (error) {
+      console.error("saveInsuranceDocForOrder error", error);
+      showToast("Không lưu được ảnh, vui lòng thử lại");
+      throw error;
+    }
+    await refreshAll();
   };
 
   const updateOrder = async (orderId, patch) => {
@@ -2672,11 +2693,14 @@ export default function App() {
 
   const declineOrder = async (orderId, note) => {
     const order = orders.find((o) => o.id === orderId);
-    const newHistory = [...order.history, `${fmtDate(new Date().toISOString())} — ${currentUser.name} ghi nhận khách không mua hàng`];
+    const newHistory = [...order.history, `${fmtDate(new Date().toISOString())} — ${currentUser.name} ghi nhận khách không mua hàng. Lý do: ${note}`];
     await updateOrder(orderId, { status: "khong_thanh_toan", handler_note: note, history: newHistory, updated_at: new Date().toISOString() });
-    await insertNotifications([
-      notifRow(order.createdBy, `Khách "${order.customerName}" không mua hàng. Ghi chú: ${note || "(không có)"}`, orderId),
-    ]);
+    const chtTargets = USERS.filter((u) => u.role === "cht" && u.store === order.store);
+    const notifyIds = new Set([order.createdBy, ...chtTargets.map((c) => c.id)]);
+    if (order.assignedHandler && order.assignedHandler !== currentUser.id) notifyIds.add(order.assignedHandler);
+    await insertNotifications(
+      Array.from(notifyIds).map((id) => notifRow(id, `Khách "${order.customerName}" không mua hàng. Lý do: ${note}`, orderId))
+    );
     await refreshAll();
     showToast("Đã cập nhật trạng thái đơn hàng");
   };
@@ -2738,11 +2762,14 @@ export default function App() {
 
   const rejectPayment = async (orderId, note) => {
     const order = orders.find((o) => o.id === orderId);
-    const newHistory = [...order.history, `${fmtDate(new Date().toISOString())} — ${currentUser.name} (kế toán) ghi nhận không thành công`];
+    const newHistory = [...order.history, `${fmtDate(new Date().toISOString())} — ${currentUser.name} (kế toán) ghi nhận không thành công. Lý do: ${note}`];
     await updateOrder(orderId, { status: "khong_thanh_toan", accountant_note: note, history: newHistory, updated_at: new Date().toISOString() });
-    await insertNotifications([
-      notifRow(order.createdBy, `Đơn hàng của khách "${order.customerName}" không thành công. Lý do: ${note || "(không có)"}`, orderId),
-    ]);
+    const chtTargets = USERS.filter((u) => u.role === "cht" && u.store === order.store);
+    const notifyIds = new Set([order.createdBy, ...chtTargets.map((c) => c.id)]);
+    if (order.assignedHandler) notifyIds.add(order.assignedHandler);
+    await insertNotifications(
+      Array.from(notifyIds).map((id) => notifRow(id, `Đơn hàng của khách "${order.customerName}" không thành công. Lý do: ${note}`, orderId))
+    );
     await refreshAll();
     showToast("Đã cập nhật: không thành công");
   };
@@ -2975,7 +3002,7 @@ export default function App() {
           <DaiSuKhachHang currentUser={currentUser} customers={scopedCustomers} orders={scopedOrders} onAdd={addCustomer} />
         )}
         {tab === "don_hang_ds" && (
-          <DaiSuDonHang currentUser={currentUser} customers={scopedCustomers} orders={scopedOrders} onCreate={createOrder} />
+          <DaiSuDonHang currentUser={currentUser} customers={scopedCustomers} orders={scopedOrders} onCreate={createOrder} onUploadInsuranceDoc={saveInsuranceDocForOrder} />
         )}
         {tab === "bao_cao_ds" && <DaiSuBaoCao currentUser={currentUser} orders={scopedOrders} />}
 
@@ -3503,10 +3530,14 @@ function AnnouncementsPage({ currentUser, announcements, onAdd, onUpdate, onDele
 // ĐẠI SỨ — Đơn hàng
 // ---------------------------------------------------------------------------
 
-function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
+function DaiSuDonHang({ currentUser, customers, orders, onCreate, onUploadInsuranceDoc }) {
   const [showForm, setShowForm] = useState(false);
   const [groupKey, setGroupKey] = useState("");
   const [query, setQuery] = useState("");
+  const [insuranceUploadOrder, setInsuranceUploadOrder] = useState(null);
+  const [insuranceDocType, setInsuranceDocType] = useState("dang_ky_xe");
+  const [insuranceDocUrl, setInsuranceDocUrl] = useState("");
+  const [savingInsuranceDoc, setSavingInsuranceDoc] = useState(false);
   const isAdmin = currentUser.role === "admin";
   const isCht = currentUser.role === "cht";
   // CHT chỉ xem khách hàng/đơn hàng của Store mình quản lý; các vai trò khác chỉ xem dữ liệu do chính mình tạo
@@ -3543,8 +3574,11 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
   const handlerRole = handlerRoleForOrder({ company: form.company, product: form.product, store: form.store });
   const storeHandlers = USERS.filter((u) => u.role === handlerRole && u.store === form.store);
   const handlers = storeHandlers.length > 0 ? storeHandlers : USERS.filter((u) => u.role === handlerRole);
-  // Khối TM1 - Bảo hiểm xe máy: đơn chuyển thẳng Kế toán bảo hiểm, không qua CSKH
-  const isTM1DirectInsurance = form.company === TM1_COMPANY_NAME && form.product === P.BAO_HIEM_XE_MAY;
+  // Khối TM1 - Bảo hiểm xe máy / Phụ tùng bán lẻ: đơn chuyển thẳng đúng nhóm Kế toán chuyên trách, không qua CSKH
+  const tm1DirectLabel = form.company === TM1_COMPANY_NAME
+    ? (form.product === P.BAO_HIEM_XE_MAY ? "Kế toán bảo hiểm" : form.product === P.PHU_TUNG ? "Kế toán kho" : "")
+    : "";
+  const isTM1DirectInsurance = !!tm1DirectLabel;
 
   const submit = async () => {
     if (!form.customerId || !form.product.trim()) {
@@ -3554,14 +3588,33 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
     setError("");
     setSaving(true);
     try {
-      await onCreate({ ...form, storeAddress: selectedBranch?.address || "" });
+      const created = await onCreate({ ...form, storeAddress: selectedBranch?.address || "" });
+      const wasInsurance = form.product === P.BAO_HIEM_XE_MAY;
       setForm({ customerId: "", company: defaultBranch.company, store: defaultBranch.name, product: defaultProducts[0] || "", handlerId: "", expectedServiceDate: "" });
       setCustomProduct(false);
       setShowForm(false);
+      if (wasInsurance && created) {
+        setInsuranceDocType("dang_ky_xe");
+        setInsuranceDocUrl("");
+        setInsuranceUploadOrder(created);
+      }
     } catch (e) {
       setError("Không tạo được đơn hàng, vui lòng thử lại.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const finishInsuranceUpload = async () => {
+    if (!insuranceUploadOrder) return;
+    setSavingInsuranceDoc(true);
+    try {
+      await onUploadInsuranceDoc(insuranceUploadOrder.id, { insuranceDocType, insuranceDocUrl });
+      setInsuranceUploadOrder(null);
+    } catch (e) {
+      // lỗi đã được báo qua toast trong hàm onUploadInsuranceDoc
+    } finally {
+      setSavingInsuranceDoc(false);
     }
   };
 
@@ -3573,6 +3626,30 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
           <Plus size={15} /> Tạo đơn hàng
         </PrimaryButton>
       </div>
+
+      {insuranceUploadOrder && (
+        <Card className="p-4 mb-5 border-teal-200 bg-teal-50/40">
+          <p className="font-semibold text-slate-800 text-sm mb-1 flex items-center gap-2"><ShieldCheck size={15} className="text-teal-700" /> Tải ảnh giấy tờ bảo hiểm cho đơn vừa tạo</p>
+          <p className="text-xs text-slate-500 mb-3">Khách: {insuranceUploadOrder.customerName} · Mã đơn: {insuranceUploadOrder.orderCode}. Không bắt buộc — có thể để Kế toán bảo hiểm tải sau, nhưng tải ngay giúp xử lý nhanh hơn.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <SelectField label="Loại giấy tờ" value={insuranceDocType} onChange={(e) => setInsuranceDocType(e.target.value)}>
+              <option value="dang_ky_xe">Đăng ký xe</option>
+              <option value="bao_hiem_cu">Bảo hiểm cũ</option>
+            </SelectField>
+            <DocImageUploadField
+              label={`Ảnh ${INSURANCE_DOC_TYPE_LABELS[insuranceDocType]}`}
+              orderId={insuranceUploadOrder.id}
+              kind={insuranceDocType}
+              value={insuranceDocUrl}
+              onChange={setInsuranceDocUrl}
+            />
+          </div>
+          <div className="flex gap-2 mt-3">
+            <PrimaryButton onClick={finishInsuranceUpload} disabled={savingInsuranceDoc}>{savingInsuranceDoc ? "Đang lưu..." : "Lưu ảnh"}</PrimaryButton>
+            <GhostButton onClick={() => setInsuranceUploadOrder(null)}>Để sau</GhostButton>
+          </div>
+        </Card>
+      )}
 
       {mineCustomers.length === 0 && (
         <div className="mb-4 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
@@ -3637,7 +3714,7 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate }) {
             )}
             {isTM1DirectInsurance ? (
               <div className="sm:col-span-2 flex items-center gap-2 text-sm text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2">
-                <ShieldCheck size={15} /> Đơn Bảo hiểm xe máy (TM1) sẽ tự động chuyển thẳng đến Kế toán bảo hiểm của "{form.store || "chi nhánh"}", không qua CSKH.
+                <ShieldCheck size={15} /> Đơn {form.product} (TM1) sẽ tự động chuyển thẳng đến {tm1DirectLabel} của "{form.store || "chi nhánh"}", không qua CSKH.
               </div>
             ) : (
               <SelectField label={`${handlerRoleLabel(handlerRole)} (tùy chọn)`} value={form.handlerId} onChange={(e) => setForm({ ...form, handlerId: e.target.value })}>
@@ -4281,6 +4358,7 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
   const [serviceUseDate, setServiceUseDate] = useState(order.serviceUseDate || order.expectedServiceDate || "");
   const [customerOver3Years, setCustomerOver3Years] = useState(!!order.customerOver3Years);
   const [invoiceError, setInvoiceError] = useState("");
+  const [declineError, setDeclineError] = useState("");
 
   const isTM1Order = order.company === TM1_COMPANY_NAME;
   const showCustomerSourceField = KY_THUAT_TRUONG_PRODUCTS.includes(order.product);
@@ -4355,14 +4433,19 @@ function HandlerActionCard({ order, onConfirm, onForward, onDecline }) {
           {invoiceError && <p className="text-xs text-rose-600 mt-1">{invoiceError}</p>}
         </div>
       )}
+      {declineError && <p className="text-xs text-rose-600 mt-1 mb-2">{declineError}</p>}
       <div className="flex flex-wrap gap-2 mt-3">
         {order.status === "cho_xu_ly" && (
           <PrimaryButton onClick={() => onConfirm(order.id, note)}><CheckCircle2 size={15} /> Xác nhận chăm sóc</PrimaryButton>
         )}
         {order.status === "dang_cham_soc" && (
           <>
-            <PrimaryButton onClick={handleForward}><Send size={15} /> Khách đồng ý mua — Chuyển kế toán</PrimaryButton>
-            <DangerButton onClick={() => onDecline(order.id, note)}><XCircle size={15} /> Khách không mua</DangerButton>
+            <PrimaryButton onClick={() => { if (window.confirm(`Xác nhận khách "${order.customerName}" ĐỒNG Ý MUA và chuyển sang Kế toán?`)) handleForward(); }}><Send size={15} /> Khách đồng ý mua — Chuyển kế toán</PrimaryButton>
+            <DangerButton onClick={() => {
+              if (!note.trim()) { setDeclineError("Vui lòng nhập lý do trước khi chọn \"Khách không mua\"."); return; }
+              setDeclineError("");
+              if (window.confirm(`Xác nhận khách "${order.customerName}" KHÔNG MUA hàng? Thao tác này không thể hoàn tác.`)) onDecline(order.id, note);
+            }}><XCircle size={15} /> Khách không mua</DangerButton>
           </>
         )}
       </div>
@@ -4949,7 +5032,7 @@ function GenericAccountingCard({ order, onConfirm, onReject }) {
         <PrimaryButton onClick={handleConfirm}>
           <CheckCircle2 size={15} /> Xác nhận thanh toán
         </PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}>
           <XCircle size={15} /> Không thành công
         </DangerButton>
       </div>
@@ -5008,7 +5091,7 @@ function XeMayForm({ order, onConfirm, onReject, note, setNote, zeroByDateRule }
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5059,7 +5142,7 @@ function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote, zeroByDat
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5109,7 +5192,7 @@ function ServiceRevenueForm({ order, onConfirm, onReject, note, setNote, ratePer
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5188,7 +5271,7 @@ function DichVuSuaChuaForm({ order, onConfirm, onReject, note, setNote, zeroByDa
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5245,7 +5328,7 @@ function PhuTungKhoForm({ order, onConfirm, onReject, note, setNote, zeroByDateR
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5299,7 +5382,7 @@ function OTOMoiForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5352,7 +5435,7 @@ function BaoHiemOTOForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5394,7 +5477,7 @@ function FlatRevenueForm({ order, onConfirm, onReject, note, setNote, ratePercen
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5445,7 +5528,7 @@ function VeMayBayForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
@@ -5490,7 +5573,7 @@ function TourForm({ order, onConfirm, onReject, note, setNote }) {
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
         <PrimaryButton onClick={handleConfirm}><CheckCircle2 size={15} /> Xác nhận thanh toán</PrimaryButton>
-        <DangerButton onClick={() => onReject(order.id, note)}><XCircle size={15} /> Không thành công</DangerButton>
+        <DangerButton onClick={() => { if (!note.trim()) { setError("Vui lòng nhập lý do trước khi chọn \"Không thành công\"."); return; } onReject(order.id, note); }}><XCircle size={15} /> Không thành công</DangerButton>
       </div>
     </>
   );
