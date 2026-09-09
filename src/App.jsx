@@ -1619,12 +1619,12 @@ function ResetPasswordModal({ currentUser, employee, onClose, onSuccess }) {
   );
 }
 
-function CreateEmployeeModal({ currentUser, onClose, onSuccess }) {
+function CreateEmployeeModal({ currentUser, onClose, onSuccess, initialRole, initialStore }) {
   const [adminPassword, setAdminPassword] = useState("");
   const [employeeCode, setEmployeeCode] = useState("");
   const [name, setName] = useState("");
-  const [role, setRole] = useState("dai_su");
-  const [store, setStore] = useState("");
+  const [role, setRole] = useState(initialRole || "dai_su");
+  const [store, setStore] = useState(initialStore || "");
   const [position, setPosition] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
@@ -2262,10 +2262,81 @@ function XuatBaoCaoPage({ currentUser, orders, myCompanies }) {
   );
 }
 
+function AccountsTable({ currentUser, members, onEdit, onReset, onToggleStatus, onDelete }) {
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Mã nhân viên</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Họ và tên</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Chi nhánh</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Vai trò</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Trạng thái</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {members.map((e) => (
+              <tr key={e.id} className={e.accountDisabled ? "opacity-60" : ""}>
+                <td className="px-4 py-3 whitespace-nowrap text-slate-600 font-mono text-xs">{e.employeeCode}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+                      {e.name && e.name.trim() ? e.name.trim().split(" ").slice(-1)[0][0] : "?"}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800 truncate">{e.name}{e.id === currentUser.id && <span className="text-slate-400 font-normal"> (bạn)</span>}</p>
+                      {e.mustChangePassword && <p className="text-[11px] text-amber-600">Đang chờ đổi mật khẩu</p>}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-slate-600">
+                  {e.store || "—"}
+                  {e.visibleCompanies?.length > 1 && <Badge className="ml-1.5 bg-indigo-50 text-indigo-700 border-indigo-200">{e.visibleCompanies.length} công ty</Badge>}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <Badge className={ROLE_META[e.role]?.color || "bg-slate-50 text-slate-700 border-slate-200"}>{ROLE_META[e.role]?.short || e.role}</Badge>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  {e.accountDisabled ? (
+                    <Badge className="bg-rose-50 text-rose-700 border-rose-200">Đã khoá</Badge>
+                  ) : (
+                    <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Hoạt động</Badge>
+                  )}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <button onClick={() => onEdit(e)} className="text-indigo-700 hover:underline">Sửa</button>
+                    <span className="text-slate-300">|</span>
+                    <button onClick={() => onReset(e)} className="text-indigo-700 hover:underline">Đặt lại MK</button>
+                    <span className="text-slate-300">|</span>
+                    <button onClick={() => onToggleStatus(e)} className="text-indigo-700 hover:underline">
+                      {e.accountDisabled ? "Mở khoá" : "Khoá"}
+                    </button>
+                    {e.id !== currentUser.id && (
+                      <>
+                        <span className="text-slate-300">|</span>
+                        <button onClick={() => onDelete(e)} className="text-rose-600 hover:underline">Xoá</button>
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function AdminAccountsPage({ currentUser, employees, onRefresh }) {
   const [query, setQuery] = useState("");
   const [resetting, setResetting] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [createPrefill, setCreatePrefill] = useState(null); // { role, store }
   const [editing, setEditing] = useState(null);
   const [statusTarget, setStatusTarget] = useState(null); // { employee, disabled }
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -2275,6 +2346,18 @@ function AdminAccountsPage({ currentUser, employees, onRefresh }) {
   const filtered = q
     ? employees.filter((e) => e.name?.toLowerCase().includes(q) || e.employeeCode?.toLowerCase().includes(q) || e.store?.toLowerCase().includes(q))
     : employees;
+
+  // Nhóm theo từng công ty (suy ra từ chi nhánh) để dễ thấy công ty nào chưa có Admin
+  const groupsByCompany = COMPANIES.map((c) => ({
+    company: c,
+    members: filtered.filter((e) => companyOfStore(e.store) === c.name),
+  }));
+  const unassigned = filtered.filter((e) => !companyOfStore(e.store));
+
+  const startCreateAdminFor = (company) => {
+    setCreatePrefill({ role: "admin", store: company.branches[0]?.name || "" });
+    setCreating(true);
+  };
 
   const setStatus = async (adminPassword) => {
     const { employee, disabled } = statusTarget;
@@ -2321,70 +2404,54 @@ function AdminAccountsPage({ currentUser, employees, onRefresh }) {
       {filtered.length === 0 ? (
         <EmptyState icon={Search} text="Không tìm thấy tài khoản phù hợp." />
       ) : (
-        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Mã nhân viên</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Họ và tên</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Chi nhánh</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Vai trò</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Trạng thái</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wide whitespace-nowrap">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((e) => (
-                  <tr key={e.id} className={e.accountDisabled ? "opacity-60" : ""}>
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-600 font-mono text-xs">{e.employeeCode}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-semibold shrink-0">
-                          {e.name && e.name.trim() ? e.name.trim().split(" ").slice(-1)[0][0] : "?"}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-slate-800 truncate">{e.name}{e.id === currentUser.id && <span className="text-slate-400 font-normal"> (bạn)</span>}</p>
-                          {e.mustChangePassword && <p className="text-[11px] text-amber-600">Đang chờ đổi mật khẩu</p>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-600">
-                      {e.store || "—"}
-                      {e.visibleCompanies?.length > 1 && <Badge className="ml-1.5 bg-indigo-50 text-indigo-700 border-indigo-200">{e.visibleCompanies.length} công ty</Badge>}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <Badge className={ROLE_META[e.role]?.color || "bg-slate-50 text-slate-700 border-slate-200"}>{ROLE_META[e.role]?.short || e.role}</Badge>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {e.accountDisabled ? (
-                        <Badge className="bg-rose-50 text-rose-700 border-rose-200">Đã khoá</Badge>
-                      ) : (
-                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Hoạt động</Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <button onClick={() => setEditing(e)} className="text-indigo-700 hover:underline">Sửa</button>
-                        <span className="text-slate-300">|</span>
-                        <button onClick={() => setResetting(e)} className="text-indigo-700 hover:underline">Đặt lại MK</button>
-                        <span className="text-slate-300">|</span>
-                        <button onClick={() => setStatusTarget({ employee: e, disabled: !e.accountDisabled })} className="text-indigo-700 hover:underline">
-                          {e.accountDisabled ? "Mở khoá" : "Khoá"}
-                        </button>
-                        {e.id !== currentUser.id && (
-                          <>
-                            <span className="text-slate-300">|</span>
-                            <button onClick={() => { setDeleteError(""); setDeleteTarget(e); }} className="text-rose-600 hover:underline">Xoá</button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="space-y-6">
+          {groupsByCompany.map(({ company, members }) => {
+            const hasAdmin = members.some((e) => e.role === "admin");
+            return (
+              <div key={company.name}>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <p className="text-sm font-semibold text-slate-700">{company.name} <span className="text-slate-400 font-normal">({members.length} tài khoản)</span></p>
+                  {!hasAdmin ? (
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-amber-50 text-amber-700 border-amber-200">Chưa có Admin</Badge>
+                      <GhostButton className="!text-xs" onClick={() => startCreateAdminFor(company)}>
+                        <UserPlus size={13} /> Thêm Admin cho công ty này
+                      </GhostButton>
+                    </div>
+                  ) : (
+                    <GhostButton className="!text-xs" onClick={() => startCreateAdminFor(company)}>
+                      <UserPlus size={13} /> Thêm Admin khác
+                    </GhostButton>
+                  )}
+                </div>
+                {members.length === 0 ? (
+                  <EmptyState icon={Search} text="Chưa có tài khoản nào cho công ty này." />
+                ) : (
+                  <AccountsTable
+                    currentUser={currentUser}
+                    members={members}
+                    onEdit={setEditing}
+                    onReset={setResetting}
+                    onToggleStatus={(e) => setStatusTarget({ employee: e, disabled: !e.accountDisabled })}
+                    onDelete={(e) => { setDeleteError(""); setDeleteTarget(e); }}
+                  />
+                )}
+              </div>
+            );
+          })}
+          {unassigned.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-slate-700 mb-2">Chưa gắn chi nhánh <span className="text-slate-400 font-normal">({unassigned.length} tài khoản)</span></p>
+              <AccountsTable
+                currentUser={currentUser}
+                members={unassigned}
+                onEdit={setEditing}
+                onReset={setResetting}
+                onToggleStatus={(e) => setStatusTarget({ employee: e, disabled: !e.accountDisabled })}
+                onDelete={(e) => { setDeleteError(""); setDeleteTarget(e); }}
+              />
+            </div>
+          )}
         </div>
       )}
       {resetting && (
@@ -2398,8 +2465,10 @@ function AdminAccountsPage({ currentUser, employees, onRefresh }) {
       {creating && (
         <CreateEmployeeModal
           currentUser={currentUser}
-          onClose={() => setCreating(false)}
-          onSuccess={() => { setCreating(false); onRefresh?.(); }}
+          initialRole={createPrefill?.role}
+          initialStore={createPrefill?.store}
+          onClose={() => { setCreating(false); setCreatePrefill(null); }}
+          onSuccess={() => { setCreating(false); setCreatePrefill(null); onRefresh?.(); }}
         />
       )}
       {editing && (
