@@ -644,6 +644,8 @@ const COMMISSION_SETTING_META = [
   { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Bảo hiểm xe máy", key: "bao_hiem_xe_may_khac", label: "Thời hạn khác (đ)", fallback: 15000 },
   { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Phụ tùng bán lẻ (phụ tùng, phụ kiện)", key: "xe_may_phu_tung_rate_percent", label: "% doanh thu sau giảm giá (nếu có giảm giá thì mất hoa hồng khoản đó, trừ khách nguồn >3 năm)", fallback: 5 },
   { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Dịch vụ sửa chữa", key: "xe_may_sua_chua_rate_percent", label: "% doanh thu sau giảm giá (nếu có giảm giá thì mất hoa hồng khoản đó, trừ khách nguồn >3 năm)", fallback: 5 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Ngưỡng thời gian tính hoa hồng & chỉ tiêu", key: "tm1_zero_commission_threshold_days_default", label: "Xe máy / Bảo hiểm xe máy — số ngày đăng ký trước ngày sử dụng dịch vụ, ≤ số này thì CHỈ tính chỉ tiêu, KHÔNG tính hoa hồng (ngày)", fallback: 1 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Ngưỡng thời gian tính hoa hồng & chỉ tiêu", key: "tm1_zero_commission_threshold_days_ky_thuat", label: "Dịch vụ sửa chữa / Phụ tùng bán lẻ — số ngày, ≤ số này thì CHỈ tính chỉ tiêu, KHÔNG tính hoa hồng (ngày)", fallback: 0 },
   { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Xe mới ô tô", key: "oto_moi_base", label: "Thưởng cơ bản (đ/xe)", fallback: 900000 },
   { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Xe mới ô tô", key: "oto_moi_discount_threshold", label: "Ngưỡng giảm giá ngoài chính sách (đ)", fallback: 2000000 },
   { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Xe mới ô tô", key: "oto_moi_rate_medium_percent", label: "Tỷ lệ hưởng khi giảm giá ≤ ngưỡng (%)", fallback: 70 },
@@ -655,6 +657,7 @@ const COMMISSION_SETTING_META = [
   { company: "III. HTC", group: "Vé máy bay", key: "ve_may_bay_le", label: "Khách lẻ (đ/vé)", fallback: 15000 },
   { company: "III. HTC", group: "Vé máy bay", key: "ve_may_bay_doan", label: "Khách đoàn (đ/vé)", fallback: 10000 },
   { company: "III. HTC", group: "Tour", key: "tour_reward", label: "Mỗi hợp đồng thành công (đ)", fallback: 500000 },
+  { company: "III. HTC", group: "Ngưỡng tự động đóng đơn", key: "htc_auto_close_days", label: "Đơn chưa thanh toán quá số ngày này sẽ tự động đóng, ghi nhận doanh thu nhưng KHÔNG tính hoa hồng (ngày)", fallback: 30 },
   { company: "IV. VYC", group: "Sản phẩm thời trang", key: "vyc_rate_percent", label: "% doanh thu", fallback: 5 },
   { company: "V. Vật tư nông nghiệp", group: "Phân bón", key: "vtnn_rate_percent", label: "% doanh thu", fallback: 2 },
 ];
@@ -797,7 +800,7 @@ const STATUS_META = {
 // đóng khi tài khoản kế toán/admin mở app — ghi nhận doanh thu & doanh số
 // Gungho cho Đại sứ, nhưng KHÔNG ghi nhận hoa hồng Gungho.
 const HTC_COMPANY_NAME = "III. HTC";
-const HTC_AUTO_CLOSE_DAYS = 30;
+const HTC_AUTO_CLOSE_DAYS_DEFAULT = 30;
 const TM1_COMPANY_NAME = "I. Công ty Cổ phần Thương mại I - Khối xe máy";
 
 // Quy định (chỉ áp dụng khối TM1 - xe máy):
@@ -826,7 +829,9 @@ function shouldZeroCommissionByDateRule(order) {
   // đăng ký trước ngày sử dụng dịch vụ từ 1 ngày trở lên vẫn ghi nhận đủ chỉ tiêu +
   // hoa hồng; chỉ mất hoa hồng khi đăng ký ngay trong ngày sử dụng dịch vụ (0 ngày
   // trước). Các sản phẩm TM1 khác giữ ngưỡng cũ (<=1 ngày là mất hoa hồng).
-  const threshold = KY_THUAT_TRUONG_PRODUCTS.includes(order.product) ? 0 : 1;
+  const threshold = KY_THUAT_TRUONG_PRODUCTS.includes(order.product)
+    ? cs("tm1_zero_commission_threshold_days_ky_thuat", 0)
+    : cs("tm1_zero_commission_threshold_days_default", 1);
   return daysBeforeUse <= threshold;
 }
 // Ngày đăng ký SAU ngày đặt cọc (khối TM1) -> đơn sẽ tự động chuyển "Không
@@ -2746,6 +2751,7 @@ export default function App() {
   // HTC_AUTO_CLOSE_DAYS ngày kể từ lần cập nhật gần nhất → tự động đóng:
   // ghi nhận doanh thu/doanh số Gungho cho Đại sứ nhưng KHÔNG tính hoa hồng.
   const autoCloseOverdueHTCOrders = async (orderList) => {
+    const HTC_AUTO_CLOSE_DAYS = cs("htc_auto_close_days", HTC_AUTO_CLOSE_DAYS_DEFAULT);
     const now = Date.now();
     const eligible = orderList.filter((o) => {
       if (o.status !== "cho_ke_toan") return false;
@@ -5611,6 +5617,7 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
         </div>
       )}
       {isHTC && order.company === HTC_COMPANY_NAME && order.updatedAt && (() => {
+        const HTC_AUTO_CLOSE_DAYS = cs("htc_auto_close_days", HTC_AUTO_CLOSE_DAYS_DEFAULT);
         const daysElapsed = (Date.now() - new Date(order.updatedAt).getTime()) / 86400000;
         const daysLeft = Math.ceil(HTC_AUTO_CLOSE_DAYS - daysElapsed);
         const overdue = daysLeft <= 0;
