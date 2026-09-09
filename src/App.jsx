@@ -1097,7 +1097,7 @@ function PrimaryButton({ children, className = "", ...props }) {
   return (
     <button
       {...props}
-      className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-gradient-to-b from-sky-500 to-sky-600 text-white text-sm font-semibold shadow-sm shadow-sky-900/20 hover:from-sky-600 hover:to-sky-700 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
+      className={`inline-flex items-center gap-1.5 px-5 py-2.5 rounded-2xl bg-indigo-600 text-white text-sm font-semibold shadow-sm hover:bg-indigo-700 active:scale-[0.98] transition disabled:opacity-40 disabled:cursor-not-allowed ${className}`}
     >
       {children}
     </button>
@@ -1219,10 +1219,10 @@ function LoginScreen({ onLogin }) {
   };
 
   return (
-    <div className="min-h-[600px] flex items-center justify-center bg-gradient-to-b from-teal-50 via-slate-50 to-slate-50 px-4 py-10">
+    <div className="min-h-[600px] flex items-center justify-center bg-gradient-to-b from-indigo-50 via-white to-slate-50 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="Phú Tài Đức Group" className="h-16 mx-auto mb-3 object-contain" />
+          <img src="/logo.jpg" alt="Phú Tài Đức Group" className="h-16 w-16 mx-auto mb-3 object-contain rounded-2xl bg-white border border-slate-200 shadow-sm p-1.5" />
           <h1 className="text-2xl font-semibold text-slate-800 tracking-tight">GUNGHO PTD</h1>
           <p className="text-sm text-slate-500 mt-1">Đăng nhập bằng mã nhân viên</p>
         </div>
@@ -2153,71 +2153,30 @@ export default function App() {
   const navGroups = NAV_GROUPS[currentUser.role];
 
   return (
-    <div className="min-h-[600px] bg-gradient-to-b from-sky-100 via-sky-50 to-white">
+    <div className="min-h-[600px] bg-slate-50 lg:flex">
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} .no-scrollbar::-webkit-scrollbar{display:none} .no-scrollbar{-ms-overflow-style:none;scrollbar-width:none} @keyframes highlightPulse{0%,100%{box-shadow:0 0 0 0 rgba(2,132,199,0)}15%{box-shadow:0 0 0 4px rgba(2,132,199,.45)}} .highlight-order{animation:highlightPulse 1.6s ease-out 2}`}</style>
       <UrgentAnnouncementModal currentUser={currentUser} announcements={announcements} />
-      {/* top bar */}
-      <div className="bg-white/70 backdrop-blur border-b border-white sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-2xl bg-white flex items-center justify-center shrink-0 shadow-sm shadow-sky-900/10 text-sky-700">
-              <TrendingUp size={18} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
-              <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {myCompanies.length > 1 && (
-              <select
-                value={activeCompany}
-                onChange={(e) => setActiveCompany(e.target.value)}
-                title="Bạn được cấp quyền xem nhiều công ty — chọn công ty muốn xem"
-                className="text-xs rounded-lg border border-sky-300 bg-sky-50 text-sky-800 font-medium px-2 py-1.5 max-w-[160px] focus:outline-none"
-              >
-                {myCompanies.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            )}
-            <GhostButton onClick={refreshAll} className="!px-2.5" title="Làm mới dữ liệu">
-              <RefreshCw size={14} />
-            </GhostButton>
-            <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} onGoToOrder={goToOrder} />
-            <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sky-500 to-sky-600 text-white flex items-center justify-center text-xs font-semibold shrink-0 shadow-sm">
-                {currentUser.name.split(" ").slice(-1)[0][0]}
-              </div>
-              <div className="hidden md:block text-right leading-tight">
-                <p className="text-xs font-medium text-slate-800">{currentUser.name}</p>
-                <p className="text-[11px] text-slate-400">{currentUser.store || ROLE_META[currentUser.role].short}</p>
-              </div>
-              <button onClick={() => setShowChangePassword(true)} className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition" title="Đổi mật khẩu">
-                <Lock size={14} className="text-slate-500" />
-              </button>
-              <button onClick={handleLogout} className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition" title="Đổi tài khoản">
-                <LogOut size={14} className="text-slate-500" />
-              </button>
-            </div>
+      {/* Sidebar cố định bên trái — chỉ hiện trên máy tính/tablet ngang, kiểu giống app Công nợ HTC */}
+      <aside className="hidden lg:flex lg:flex-col w-64 shrink-0 bg-white border-r border-slate-200 lg:h-screen lg:sticky lg:top-0">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2.5">
+          <img src="/logo.jpg" alt="Logo" className="w-9 h-9 rounded-full bg-white border border-slate-200 object-contain shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
+            <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
           </div>
         </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-6 lg:flex lg:gap-6 lg:items-start">
-        {/* Sidebar điều hướng — hiển thị bên trái trên máy tính/tablet ngang */}
-        <aside className="hidden lg:block w-60 shrink-0 sticky top-24 space-y-3">
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
           {navGroups.map((group, gi) => (
-            <div key={gi} className="bg-white/70 backdrop-blur rounded-2xl p-2 space-y-1">
+            <div key={gi} className="space-y-0.5">
               {group.map((n) => (
                 <button
                   key={n.key}
                   onClick={() => setTab(n.key)}
-                  className={`w-full flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-left ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition text-left ${
                     tab === n.key
-                      ? "bg-gradient-to-b from-sky-500 to-sky-600 text-white shadow-sm shadow-sky-900/20"
-                      : "text-slate-500 hover:bg-white hover:text-slate-700"
+                      ? "bg-indigo-600 text-white"
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
                   }`}
                 >
                   <n.icon size={16} className="shrink-0" /> {n.label}
@@ -2225,9 +2184,63 @@ export default function App() {
               ))}
             </div>
           ))}
-        </aside>
+        </nav>
+      </aside>
 
-        <div className="flex-1 min-w-0 pb-24 lg:pb-0">
+      {/* Cột nội dung bên phải */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* top bar */}
+        <div className="bg-white border-b border-slate-200 sticky top-0 z-30" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0 lg:hidden">
+              <img src="/logo.jpg" alt="Logo" className="w-8 h-8 rounded-full bg-white border border-slate-200 object-contain shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-800 leading-tight tracking-tight">GUNGHO PTD</p>
+                <p className="text-[11px] text-slate-400 leading-tight truncate">Theo dõi doanh thu &amp; đơn hàng</p>
+              </div>
+            </div>
+            <div className="hidden lg:block min-w-0">
+              <p className="text-sm font-semibold text-slate-800 leading-tight">{ROLE_META[currentUser.role]?.short || "Trang chủ"}</p>
+              <p className="text-[11px] text-slate-400 leading-tight">{currentUser.store || ""}</p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {myCompanies.length > 1 && (
+                <select
+                  value={activeCompany}
+                  onChange={(e) => setActiveCompany(e.target.value)}
+                  title="Bạn được cấp quyền xem nhiều công ty — chọn công ty muốn xem"
+                  className="text-xs rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-800 font-medium px-2 py-1.5 max-w-[160px] focus:outline-none"
+                >
+                  {myCompanies.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              )}
+              <GhostButton onClick={refreshAll} className="!px-2.5" title="Làm mới dữ liệu">
+                <RefreshCw size={14} />
+              </GhostButton>
+              <NotifBell notifications={notifications} currentUser={currentUser} onMarkRead={markRead} onGoToOrder={goToOrder} />
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-semibold shrink-0">
+                  {currentUser.name.split(" ").slice(-1)[0][0]}
+                </div>
+                <div className="hidden md:block text-right leading-tight">
+                  <p className="text-xs font-medium text-slate-800">{currentUser.name}</p>
+                  <p className="text-[11px] text-slate-400">{currentUser.store || ROLE_META[currentUser.role].short}</p>
+                </div>
+                <button onClick={() => setShowChangePassword(true)} className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition" title="Đổi mật khẩu">
+                  <Lock size={14} className="text-slate-500" />
+                </button>
+                <button onClick={handleLogout} className="w-8 h-8 rounded-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition" title="Đổi tài khoản">
+                  <LogOut size={14} className="text-slate-500" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-0 px-4 py-6 pb-24 lg:pb-6 max-w-6xl w-full mx-auto lg:mx-0">
         <TabErrorBoundary resetKey={tab}>
         {tab === "khach_hang" && (
           <DaiSuKhachHang currentUser={currentUser} customers={scopedCustomers} orders={scopedOrders} onAdd={addCustomer} />
@@ -2282,7 +2295,7 @@ export default function App() {
                   key={n.key}
                   onClick={() => setTab(n.key)}
                   className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-[10.5px] font-medium whitespace-nowrap shrink-0 transition ${
-                    tab === n.key ? "text-sky-600" : "text-slate-400"
+                    tab === n.key ? "text-indigo-600" : "text-slate-400"
                   }`}
                 >
                   <n.icon size={18} />
