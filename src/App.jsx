@@ -690,6 +690,7 @@ const NAV_GROUP_ORDER = [
   { id: "ke_toan_grp", title: "Kế toán" },
   { id: "bao_cao_cty_grp", title: null },
   { id: "thong_bao_grp", title: null },
+  { id: "xuat_bao_cao_grp", title: null },
   { id: "quan_tri", title: "Quản trị" },
 ];
 const NAV_ITEMS = [
@@ -705,6 +706,7 @@ const NAV_ITEMS = [
   { key: "lich_su", label: "Lịch sử", icon: Wallet, groupId: "ke_toan_grp", defaultRoles: ["ke_toan", "ke_toan_xe", "ke_toan_bao_hiem", "ke_toan_dich_vu", "ke_toan_kho", "admin"] },
   { key: "bao_cao_cty", label: "Báo cáo công ty", icon: Landmark, groupId: "bao_cao_cty_grp", defaultRoles: ["admin"] },
   { key: "thong_bao", label: "Thông báo", icon: Megaphone, groupId: "thong_bao_grp", defaultRoles: ALL_ROLES },
+  { key: "xuat_bao_cao", label: "Xuất báo cáo", icon: Download, groupId: "xuat_bao_cao_grp", defaultRoles: ALL_ROLES },
   { key: "tai_khoan", label: "Tài khoản", icon: ShieldCheck, groupId: "quan_tri", defaultRoles: ["admin"] },
   { key: "chinh_sach_cty", label: "Chính sách công ty", icon: Building2, groupId: "quan_tri", defaultRoles: ["admin"] },
   { key: "phan_quyen", label: "Phân quyền", icon: Lock, groupId: "quan_tri", defaultRoles: ["admin"] },
@@ -2123,6 +2125,99 @@ function PhanQuyenPage({ currentUser, onRefresh }) {
   );
 }
 
+function XuatBaoCaoPage({ currentUser, orders }) {
+  const isAdmin = currentUser.role === "admin";
+  const isCht = currentUser.role === "cht";
+
+  // ---- Mẫu "Nhân viên": Đại sứ chỉ xuất được cho chính mình; CHT/Admin chọn từ danh sách ----
+  const ambassadorChoices = currentUser.role === "dai_su"
+    ? [currentUser]
+    : USERS.filter((u) => u.role === "dai_su" && (isAdmin || u.store === currentUser.store));
+  const [ambassadorId, setAmbassadorId] = useState(currentUser.role === "dai_su" ? currentUser.id : (ambassadorChoices[0]?.id || ""));
+  const [nvFromDate, setNvFromDate] = useState("");
+  const [nvToDate, setNvToDate] = useState("");
+  const handleNhanVienExport = () => {
+    const ambassador = ambassadorChoices.find((u) => u.id === ambassadorId) || currentUser;
+    exportGungHoNhanVienTemplate({ ambassador, orders, fromDate: nvFromDate, toDate: nvToDate });
+  };
+
+  // ---- Xuất toàn bộ đơn hàng đang xem được (theo đúng phạm vi vai trò) ----
+  const handleGenericExport = () => {
+    const sheets = [{ name: "Đơn hàng", rows: orders.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(orderExportRow) }];
+    exportToExcel(sheets, `DonHang_${currentUser.name.replace(/\s+/g, "")}_${Date.now()}.xlsx`);
+  };
+
+  // ---- 3 mẫu công ty toàn tập đoàn — chỉ Admin ----
+  const defaultCompany = branchInfo(currentUser.store)?.company || COMPANIES[0].name;
+  const [tplCompany, setTplCompany] = useState(defaultCompany);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [tplUnit, setTplUnit] = useState(currentUser.store || ALL_BRANCHES[0].name);
+  const [tplYear, setTplYear] = useState(String(new Date().getFullYear()));
+
+  return (
+    <div className="space-y-5">
+      <SectionTitle icon={Download} title="Xuất báo cáo" subtitle="Toàn bộ mẫu báo cáo Excel — gộp về 1 chỗ duy nhất" />
+
+      <Card className="p-4">
+        <p className="font-semibold text-slate-800 text-sm mb-1">Xuất toàn bộ đơn hàng (dữ liệu thô)</p>
+        <p className="text-xs text-slate-500 mb-3">Xuất đúng phạm vi dữ liệu bạn đang xem được trong app, không theo mẫu cố định — dùng để tra cứu nhanh.</p>
+        <GhostButton onClick={handleGenericExport}><Download size={15} /> Xuất Excel</GhostButton>
+      </Card>
+
+      <Card className="p-4">
+        <p className="font-semibold text-slate-800 text-sm mb-1">Mẫu "Kết quả Gung Ho chi tiết nhân viên"</p>
+        <p className="text-xs text-slate-500 mb-3">Chọn nhân viên (Đại sứ Gungho) và khoảng thời gian cần tra cứu (bỏ trống ngày nếu muốn lấy toàn bộ dữ liệu).</p>
+        <div className="flex flex-wrap items-end gap-3">
+          {currentUser.role !== "dai_su" && (
+            <SelectField label="Nhân viên" value={ambassadorId} onChange={(e) => setAmbassadorId(e.target.value)}>
+              {ambassadorChoices.map((u) => <option key={u.id} value={u.id}>{u.name} — {u.store}</option>)}
+            </SelectField>
+          )}
+          <TextField label="Từ ngày" type="date" value={nvFromDate} onChange={(e) => setNvFromDate(e.target.value)} />
+          <TextField label="Đến ngày" type="date" value={nvToDate} onChange={(e) => setNvToDate(e.target.value)} />
+          <PrimaryButton onClick={handleNhanVienExport} disabled={!ambassadorId}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
+        </div>
+      </Card>
+
+      {(isAdmin || isCht) && (
+        <>
+          <Card className="p-4">
+            <p className="font-semibold text-slate-800 text-sm mb-1">Mẫu "Kết quả Gung Ho chi tiết công ty theo đơn vị"</p>
+            <p className="text-xs text-slate-500 mb-3">Chọn khối công ty và khoảng thời gian cần tra cứu (bỏ trống ngày nếu muốn lấy toàn bộ dữ liệu).</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <SelectField label="Khối công ty" value={tplCompany} onChange={(e) => setTplCompany(e.target.value)}>
+                {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+              </SelectField>
+              <TextField label="Từ ngày" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              <TextField label="Đến ngày" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+              <PrimaryButton onClick={() => exportGungHoCongTyTemplate({ companyName: tplCompany, orders, fromDate, toDate })}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <p className="font-semibold text-slate-800 text-sm mb-1">Mẫu "Thứ hạng Gung Ho"</p>
+            <p className="text-xs text-slate-500 mb-3">Xếp hạng nhân viên (Đại sứ) trong khối công ty đã chọn ở trên theo điểm thi đua TD, khoảng thời gian dùng chung với mục phía trên.</p>
+            <PrimaryButton onClick={() => exportGungHoRankingTemplate({ companyName: tplCompany, orders, fromDate, toDate })}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
+          </Card>
+
+          <Card className="p-4">
+            <p className="font-semibold text-slate-800 text-sm mb-1">Mẫu "Kết quả Gung Ho chi tiết công ty theo thời gian"</p>
+            <p className="text-xs text-slate-500 mb-3">Chọn 1 đơn vị/chi nhánh và năm cần xem — chia theo 12 tháng.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <SelectField label="Đơn vị / chi nhánh" value={tplUnit} onChange={(e) => setTplUnit(e.target.value)}>
+                {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+              </SelectField>
+              <TextField label="Năm" type="number" value={tplYear} onChange={(e) => setTplYear(e.target.value)} />
+              <PrimaryButton onClick={() => exportGungHoThoiGianTemplate({ unitName: tplUnit, orders, year: tplYear })}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AdminAccountsPage({ currentUser, employees, onRefresh }) {
   const [query, setQuery] = useState("");
   const [resetting, setResetting] = useState(null);
@@ -3042,6 +3137,9 @@ export default function App() {
         )}
         {tab === "phan_quyen" && isNavItemEnabled(currentUser.role, navItemByKey("phan_quyen")) && (
           <PhanQuyenPage currentUser={currentUser} onRefresh={refreshAll} />
+        )}
+        {tab === "xuat_bao_cao" && (
+          <XuatBaoCaoPage currentUser={currentUser} orders={scopedOrders} />
         )}
         </TabErrorBoundary>
         </div>
@@ -4043,7 +4141,6 @@ function DaiSuBaoCao({ currentUser, orders }) {
           title="Báo cáo tổng hợp"
           subtitle={isAdmin && viewCompany ? `Đang xem: ${viewCompany}` : "Toàn bộ đơn hàng, hoa hồng và xếp hạng"}
         />
-        <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
 
       {isAdmin && (
@@ -4076,16 +4173,6 @@ function DaiSuBaoCao({ currentUser, orders }) {
         <MetricCard label="Đơn đang chăm sóc" value={caring} icon={ClipboardList} accent="indigo" />
         <MetricCard label="Tổng số đơn hàng" value={mine.length} icon={ShoppingBag} accent="rose" />
       </div>
-
-      <Card className="p-4">
-        <p className="font-semibold text-slate-800 text-sm mb-1">Xuất mẫu "Kết quả Gung Ho chi tiết nhân viên"</p>
-        <p className="text-xs text-slate-500 mb-3">Chọn khoảng thời gian cần tra cứu (bỏ trống nếu muốn lấy toàn bộ dữ liệu).</p>
-        <div className="flex flex-wrap items-end gap-3">
-          <TextField label="Từ ngày" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          <TextField label="Đến ngày" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-          <PrimaryButton onClick={handleTemplateExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
-        </div>
-      </Card>
 
       <Card className="p-0 overflow-hidden">
         <div className="p-4 border-b border-slate-100">
@@ -4211,7 +4298,6 @@ function BaoCaoCongTy({ orders }) {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <SectionTitle icon={Landmark} title="Báo cáo doanh thu theo từng công ty" subtitle={rangeLabel} />
-        <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
 
       <Card className="p-4">
@@ -4639,7 +4725,6 @@ function XuLyBaoCao({ currentUser, orders }) {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <SectionTitle icon={BarChart3} title="Báo cáo xử lý & chăm sóc" />
-        <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard label="Tổng khách được giao" value={mine.length} icon={Users} accent="teal" />
@@ -4822,7 +4907,6 @@ function ChtBaoCao({ currentUser, orders }) {
           title="Báo cáo doanh số Gungho"
           subtitle={isCht ? `Store "${currentUser.store}"` : viewCompany ? `Đang xem: ${viewCompany}` : "Toàn bộ khối công ty & chi nhánh (Tập đoàn)"}
         />
-        <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
 
       {!isCht && (
@@ -4877,46 +4961,6 @@ function ChtBaoCao({ currentUser, orders }) {
         title={viewCompany ? `Bảng xếp hạng Gungho — nhân viên ${viewCompany}` : "Bảng xếp hạng Gungho (toàn tập đoàn, theo điểm thi đua)"}
         icon={Award}
       />
-
-      {/* Xuất mẫu Excel — gộp lại, ẩn mặc định để không che các số liệu chính ở trên */}
-      <Card className="p-4">
-        <button onClick={() => setShowExports((s) => !s)} className="w-full flex items-center justify-between gap-3">
-          <p className="font-semibold text-slate-800 text-sm flex items-center gap-2"><Download size={15} className="text-indigo-700" /> Xuất báo cáo theo mẫu (Excel)</p>
-          <ChevronRight size={16} className={`text-slate-400 transition-transform ${showExports ? "rotate-90" : ""}`} />
-        </button>
-        {showExports && (
-          <div className="mt-4 space-y-4 pt-4 border-t border-slate-100">
-            <div>
-              <p className="font-medium text-slate-800 text-sm mb-1">Kết quả Gung Ho chi tiết công ty theo đơn vị</p>
-              <p className="text-xs text-slate-500 mb-3">Chọn khối công ty và khoảng thời gian cần tra cứu (bỏ trống ngày nếu muốn lấy toàn bộ dữ liệu).</p>
-              <div className="flex flex-wrap items-end gap-3">
-                <SelectField label="Khối công ty" value={tplCompany} onChange={(e) => setTplCompany(e.target.value)}>
-                  {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-                </SelectField>
-                <TextField label="Từ ngày" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-                <TextField label="Đến ngày" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-                <PrimaryButton onClick={handleTemplateExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
-              </div>
-            </div>
-            <div className="pt-4 border-t border-slate-100">
-              <p className="font-medium text-slate-800 text-sm mb-1">Thứ hạng Gung Ho</p>
-              <p className="text-xs text-slate-500 mb-3">Xếp hạng nhân viên (Đại sứ) trong khối công ty đã chọn ở trên theo điểm thi đua TD, khoảng thời gian dùng chung với mục phía trên.</p>
-              <PrimaryButton onClick={handleRankingExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
-            </div>
-            <div className="pt-4 border-t border-slate-100">
-              <p className="font-medium text-slate-800 text-sm mb-1">Kết quả Gung Ho chi tiết công ty theo thời gian</p>
-              <p className="text-xs text-slate-500 mb-3">Chọn 1 đơn vị/chi nhánh và năm cần xem — chia theo 12 tháng.</p>
-              <div className="flex flex-wrap items-end gap-3">
-                <SelectField label="Đơn vị / chi nhánh" value={tplUnit} onChange={(e) => setTplUnit(e.target.value)}>
-                  {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
-                </SelectField>
-                <TextField label="Năm" type="number" value={tplYear} onChange={(e) => setTplYear(e.target.value)} />
-                <PrimaryButton onClick={handleTimeTemplateExport}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
-              </div>
-            </div>
-          </div>
-        )}
-      </Card>
     </div>
   );
 }
@@ -5843,7 +5887,6 @@ function KeToanLichSu({ currentUser, orders }) {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <SectionTitle icon={Landmark} title="Lịch sử giao dịch" subtitle={effectiveStore || (isAdmin ? "Tất cả chi nhánh" : "")} />
-        <GhostButton onClick={handleExport}><Download size={15} /> Xuất Excel</GhostButton>
       </div>
       {isAdmin && (
         <div className="sm:w-64">
