@@ -1076,6 +1076,45 @@ function MetricCard({ label, value, icon: Icon, accent = "teal" }) {
   );
 }
 
+function HeroMetricCard({ label, value, trendPercent }) {
+  const hasTrend = trendPercent !== null && trendPercent !== undefined && Number.isFinite(trendPercent);
+  const isUp = hasTrend && trendPercent >= 0;
+  return (
+    <div className="rounded-2xl bg-indigo-600 text-white p-4 sm:p-5">
+      <p className="text-[11px] uppercase tracking-wide opacity-80">{label}</p>
+      <p className="text-2xl sm:text-3xl font-bold mt-1">{value}</p>
+      {hasTrend && (
+        <p className="text-xs mt-1.5 opacity-90 flex items-center gap-1">
+          {isUp ? "↑" : "↓"} {Math.abs(trendPercent).toFixed(0)}% so với kỳ trước
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Biểu đồ xu hướng thu gọn — chỉ để thấy dáng tăng/giảm, không cần trục số chi tiết
+function MiniTrendBars({ orders, months = 6 }) {
+  const data = buildMonthlyTrend(orders, months);
+  const max = Math.max(1, ...data.map((d) => d.revenue));
+  return (
+    <Card className="p-4">
+      <p className="text-xs font-medium text-slate-600 mb-3">Xu hướng doanh thu {months} tháng gần đây</p>
+      <div className="flex items-end gap-1.5 h-16">
+        {data.map((d, i) => {
+          const isLast = i === data.length - 1;
+          const h = Math.max(4, Math.round((d.revenue / max) * 100));
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div className={`w-full rounded-t ${isLast ? "bg-indigo-600" : "bg-indigo-200"}`} style={{ height: `${h}%` }} title={`${d.label}: ${fmtMoney(d.revenue)}`} />
+              <span className="text-[9px] text-slate-400">{d.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function TextField({ label, ...props }) {
   return (
     <label className="block">
@@ -2125,9 +2164,14 @@ function PhanQuyenPage({ currentUser, onRefresh }) {
   );
 }
 
-function XuatBaoCaoPage({ currentUser, orders }) {
+function XuatBaoCaoPage({ currentUser, orders, myCompanies }) {
   const isAdmin = currentUser.role === "admin";
   const isCht = currentUser.role === "cht";
+  // Chỉ hiện đúng (các) công ty mà tài khoản này thực sự được xem — tài khoản
+  // admin thường (1 công ty) chỉ thấy công ty của mình; tài khoản Super (được
+  // gán nhiều công ty) thấy đủ các công ty đã gán, giống hệt cơ chế cách ly dữ liệu.
+  const visibleCompanyList = COMPANIES.filter((c) => myCompanies.includes(c.name));
+  const visibleBranches = ALL_BRANCHES.filter((b) => myCompanies.includes(b.company));
 
   // ---- Mẫu "Nhân viên": Đại sứ chỉ xuất được cho chính mình; CHT/Admin chọn từ danh sách ----
   const ambassadorChoices = currentUser.role === "dai_su"
@@ -2148,11 +2192,11 @@ function XuatBaoCaoPage({ currentUser, orders }) {
   };
 
   // ---- 3 mẫu công ty toàn tập đoàn — chỉ Admin ----
-  const defaultCompany = branchInfo(currentUser.store)?.company || COMPANIES[0].name;
+  const defaultCompany = branchInfo(currentUser.store)?.company || visibleCompanyList[0]?.name || COMPANIES[0].name;
   const [tplCompany, setTplCompany] = useState(defaultCompany);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [tplUnit, setTplUnit] = useState(currentUser.store || ALL_BRANCHES[0].name);
+  const [tplUnit, setTplUnit] = useState(currentUser.store || visibleBranches[0]?.name || ALL_BRANCHES[0].name);
   const [tplYear, setTplYear] = useState(String(new Date().getFullYear()));
 
   return (
@@ -2187,7 +2231,7 @@ function XuatBaoCaoPage({ currentUser, orders }) {
             <p className="text-xs text-slate-500 mb-3">Chọn khối công ty và khoảng thời gian cần tra cứu (bỏ trống ngày nếu muốn lấy toàn bộ dữ liệu).</p>
             <div className="flex flex-wrap items-end gap-3">
               <SelectField label="Khối công ty" value={tplCompany} onChange={(e) => setTplCompany(e.target.value)}>
-                {COMPANIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                {visibleCompanyList.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
               </SelectField>
               <TextField label="Từ ngày" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
               <TextField label="Đến ngày" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
@@ -2206,7 +2250,7 @@ function XuatBaoCaoPage({ currentUser, orders }) {
             <p className="text-xs text-slate-500 mb-3">Chọn 1 đơn vị/chi nhánh và năm cần xem — chia theo 12 tháng.</p>
             <div className="flex flex-wrap items-end gap-3">
               <SelectField label="Đơn vị / chi nhánh" value={tplUnit} onChange={(e) => setTplUnit(e.target.value)}>
-                {ALL_BRANCHES.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
+                {visibleBranches.map((b) => <option key={b.name} value={b.name}>{b.name}</option>)}
               </SelectField>
               <TextField label="Năm" type="number" value={tplYear} onChange={(e) => setTplYear(e.target.value)} />
               <PrimaryButton onClick={() => exportGungHoThoiGianTemplate({ unitName: tplUnit, orders, year: tplYear })}><Download size={15} /> Xuất theo mẫu</PrimaryButton>
@@ -3139,7 +3183,7 @@ export default function App() {
           <PhanQuyenPage currentUser={currentUser} onRefresh={refreshAll} />
         )}
         {tab === "xuat_bao_cao" && (
-          <XuatBaoCaoPage currentUser={currentUser} orders={scopedOrders} />
+          <XuatBaoCaoPage currentUser={currentUser} orders={scopedOrders} myCompanies={myCompanies} />
         )}
         </TabErrorBoundary>
         </div>
@@ -3981,6 +4025,29 @@ function RankedLeaderRow({ rank, name, valueLabel, percent }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Bảng xếp hạng dạng gọn — chỉ huy chương/số thứ tự + tên + điểm, không có thanh ngang
+function CompactRankList({ orders, groupKeyFn, title, valueSuffix = " điểm", limit = 3 }) {
+  const rows = buildTDLeaderboard(orders, groupKeyFn).slice(0, limit);
+  return (
+    <Card className="p-4">
+      <p className="text-xs font-medium text-slate-600 mb-2">{title}</p>
+      {rows.length === 0 ? (
+        <p className="text-sm text-slate-400 py-2">Chưa có dữ liệu.</p>
+      ) : (
+        <div>
+          {rows.map((r, i) => (
+            <div key={r.name} className="flex items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
+              <span className="w-5 text-sm">{RANK_MEDAL[i] || i + 1}</span>
+              <span className="flex-1 text-xs text-slate-700 truncate">{r.name}</span>
+              <span className="text-xs font-semibold text-slate-800">{r.td.toFixed(1)}{valueSuffix}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -4868,6 +4935,14 @@ function ChtBaoCao({ currentUser, orders }) {
 
   const paid = viewOrders.filter((o) => o.status === "da_thanh_toan");
   const revenue = paid.reduce((s, o) => s + (o.finalAmount ?? o.totalAmount), 0);
+  const commission = paid.reduce((s, o) => s + (o.commissionAmount || 0), 0);
+  const pending = viewOrders.filter((o) => o.status === "cho_ke_toan").length;
+  // So sánh doanh thu tháng này với tháng trước để tính % tăng/giảm cho chỉ số hero
+  const trendData = buildMonthlyTrend(viewOrders, 2);
+  const prevRevenue = trendData[0]?.revenue || 0;
+  const curRevenue = trendData[1]?.revenue || 0;
+  const trendPercent = prevRevenue > 0 ? ((curRevenue - prevRevenue) / prevRevenue) * 100 : null;
+  const [showDetail, setShowDetail] = useState(false);
   const defaultCompany = branchInfo(currentUser.store)?.company || COMPANIES[0].name;
   const [tplCompany, setTplCompany] = useState(defaultCompany);
   const [fromDate, setFromDate] = useState("");
@@ -4933,34 +5008,48 @@ function ChtBaoCao({ currentUser, orders }) {
         </Card>
       )}
 
-      {/* Chỉ số quan trọng nhất — xem lướt là hiểu ngay tình hình */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        <MetricCard label="Tổng doanh thu" value={fmtMoney(revenue)} icon={Building2} accent="indigo" />
-        <MetricCard label="Đơn đã hoàn tất" value={paid.length} icon={CheckCircle2} accent="amber" />
-        <MetricCard label="Tổng số đơn hàng" value={viewOrders.length} icon={ShoppingBag} accent="teal" />
+      {/* Chỉ số quan trọng nhất — 1 con số chính làm hero, các số phụ gọn trong lưới 2x2 */}
+      <HeroMetricCard label="Tổng doanh thu" value={fmtMoney(revenue)} trendPercent={trendPercent} />
+      <div className="grid grid-cols-2 gap-3">
+        <MetricCard label="Hoa hồng" value={fmtMoney(commission)} icon={Wallet} accent="amber" />
+        <MetricCard label="Đơn đã hoàn tất" value={paid.length} icon={CheckCircle2} accent="teal" />
+        <MetricCard label="Chờ xác nhận" value={pending} icon={ClipboardCheck} accent="rose" />
+        <MetricCard label="Tổng số đơn hàng" value={viewOrders.length} icon={ShoppingBag} accent="indigo" />
       </div>
 
-      {/* Biểu đồ trực quan — đặt ngay sau chỉ số để thấy xu hướng trước khi đi vào chi tiết */}
-      <div className="grid lg:grid-cols-2 gap-5">
-        <RevenueTrendChart orders={viewOrders} title={viewCompany ? `Xu hướng doanh thu — ${viewCompany}` : "Xu hướng doanh thu 6 tháng gần đây (toàn tập đoàn)"} />
-        <ProductMixPieChart orders={viewOrders} title={viewCompany ? `Tỉ trọng sản phẩm — ${viewCompany}` : "Tỉ trọng doanh thu theo sản phẩm (toàn tập đoàn)"} />
+      {/* Xu hướng thu gọn + xếp hạng nhanh — xem lướt là đủ, chi tiết đầy đủ ở dưới */}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <MiniTrendBars orders={viewOrders} />
+        <CompactRankList orders={viewOrders} groupKeyFn={(o) => o.createdByName} title="Xếp hạng Gungho — top 3" />
       </div>
 
-      {/* Xếp hạng chi tiết */}
-      <div className="grid lg:grid-cols-2 gap-5">
-        {viewCompany ? (
-          <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.store} title={`Xếp hạng theo cửa hàng / chi nhánh — ${viewCompany}`} icon={Store} />
-        ) : (
-          <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.company} title="Xếp hạng theo khối công ty" icon={Building2} />
-        )}
-        <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.product} title={viewCompany ? `Xếp hạng sản phẩm bán chạy — ${viewCompany}` : "Xếp hạng sản phẩm bán chạy"} icon={ShoppingBag} />
-      </div>
-      <GunghoLeaderBoard
-        orders={viewOrders}
-        groupKeyFn={(o) => o.createdByName}
-        title={viewCompany ? `Bảng xếp hạng Gungho — nhân viên ${viewCompany}` : "Bảng xếp hạng Gungho (toàn tập đoàn, theo điểm thi đua)"}
-        icon={Award}
-      />
+      <button onClick={() => setShowDetail((s) => !s)} className="w-full flex items-center justify-center gap-1.5 text-sm text-indigo-700 font-medium py-2 hover:underline">
+        {showDetail ? "Ẩn bớt chi tiết" : "Xem đầy đủ biểu đồ & bảng xếp hạng"} <ChevronRight size={14} className={`transition-transform ${showDetail ? "rotate-90" : ""}`} />
+      </button>
+
+      {showDetail && (
+        <div className="space-y-5">
+          <div className="grid lg:grid-cols-2 gap-5">
+            <RevenueTrendChart orders={viewOrders} title={viewCompany ? `Xu hướng doanh thu — ${viewCompany}` : "Xu hướng doanh thu 6 tháng gần đây (toàn tập đoàn)"} />
+            <ProductMixPieChart orders={viewOrders} title={viewCompany ? `Tỉ trọng sản phẩm — ${viewCompany}` : "Tỉ trọng doanh thu theo sản phẩm (toàn tập đoàn)"} />
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-5">
+            {viewCompany ? (
+              <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.store} title={`Xếp hạng theo cửa hàng / chi nhánh — ${viewCompany}`} icon={Store} />
+            ) : (
+              <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.company} title="Xếp hạng theo khối công ty" icon={Building2} />
+            )}
+            <LeaderBoard orders={viewOrders} groupKeyFn={(o) => o.product} title={viewCompany ? `Xếp hạng sản phẩm bán chạy — ${viewCompany}` : "Xếp hạng sản phẩm bán chạy"} icon={ShoppingBag} />
+          </div>
+          <GunghoLeaderBoard
+            orders={viewOrders}
+            groupKeyFn={(o) => o.createdByName}
+            title={viewCompany ? `Bảng xếp hạng Gungho — nhân viên ${viewCompany}` : "Bảng xếp hạng Gungho (toàn tập đoàn, theo điểm thi đua)"}
+            icon={Award}
+          />
+        </div>
+      )}
     </div>
   );
 }
