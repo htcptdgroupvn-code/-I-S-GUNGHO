@@ -633,28 +633,30 @@ function cs(key, fallback) {
 }
 // Mô tả để hiển thị trong trang chỉnh sửa — key phải khớp đúng với các nơi dùng cs() bên dưới
 const COMMISSION_SETTING_META = [
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_ga_con_threshold", label: "Ngưỡng giảm giá — xe ga/côn (đ)", fallback: 400000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_so_dien_threshold", label: "Ngưỡng giảm giá — xe số/điện (đ)", fallback: 300000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_reward_high", label: "Thưởng khi giảm giá ≤ ngưỡng (đ/xe)", fallback: 200000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_reward_low", label: "Thưởng khi giảm giá > ngưỡng (đ/xe)", fallback: 100000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_dn_reward_low_qty", label: "Khách DN/Tổ chức — SL ≤ 10 (đ/xe)", fallback: 100000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "xe_may_dn_reward_high_qty", label: "Khách DN/Tổ chức — SL > 10 (đ/xe)", fallback: 50000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "bao_hiem_xe_may_2nam", label: "Bảo hiểm xe máy — hợp đồng 2 năm (đ)", fallback: 20000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "bao_hiem_xe_may_3nam", label: "Bảo hiểm xe máy — hợp đồng 3 năm (đ)", fallback: 25000 },
-  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", key: "bao_hiem_xe_may_khac", label: "Bảo hiểm xe máy — thời hạn khác (đ)", fallback: 15000 },
-  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_base", label: "Xe ô tô mới — thưởng cơ bản (đ/xe)", fallback: 900000 },
-  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_discount_threshold", label: "Ngưỡng giảm giá ngoài chính sách (đ)", fallback: 2000000 },
-  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_rate_medium_percent", label: "Tỷ lệ hưởng khi giảm giá ≤ ngưỡng (%)", fallback: 70 },
-  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "oto_moi_rate_low_percent", label: "Tỷ lệ hưởng khi giảm giá > ngưỡng (%)", fallback: 50 },
-  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "bao_hiem_oto_multiplier_percent", label: "Bảo hiểm ô tô — hệ số hưởng trên tỷ lệ chính sách (%)", fallback: 82 },
-  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "phu_kien_oto_rate_percent", label: "Phụ kiện, chăm sóc xe — % doanh thu", fallback: 9 },
-  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", key: "sua_chua_oto_rate_percent", label: "Sửa chữa, bảo dưỡng ô tô — % doanh thu", fallback: 5 },
-  { company: "III. HTC", key: "htc_flat_rate_percent", label: "Đặc sản / Phòng nghỉ / Tiệc — % doanh thu", fallback: 3 },
-  { company: "III. HTC", key: "ve_may_bay_le", label: "Vé máy bay — khách lẻ (đ/vé)", fallback: 15000 },
-  { company: "III. HTC", key: "ve_may_bay_doan", label: "Vé máy bay — khách đoàn (đ/vé)", fallback: 10000 },
-  { company: "III. HTC", key: "tour_reward", label: "Tour nội địa — mỗi hợp đồng thành công (đ)", fallback: 500000 },
-  { company: "IV. VYC", key: "vyc_rate_percent", label: "Sản phẩm thời trang — % doanh thu", fallback: 5 },
-  { company: "V. Vật tư nông nghiệp", key: "vtnn_rate_percent", label: "Phân bón — % doanh thu", fallback: 2 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Xe máy, xe đạp/máy điện (khách cá nhân)", key: "xe_may_ga_con_threshold", label: "Ngưỡng giảm giá — xe ga/côn (đ)", fallback: 400000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Xe máy, xe đạp/máy điện (khách cá nhân)", key: "xe_may_so_dien_threshold", label: "Ngưỡng giảm giá — xe số/điện (đ)", fallback: 300000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Xe máy, xe đạp/máy điện (khách cá nhân)", key: "xe_may_reward_high", label: "Thưởng khi giảm giá ≤ ngưỡng (đ/xe)", fallback: 200000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Xe máy, xe đạp/máy điện (khách cá nhân)", key: "xe_may_reward_low", label: "Thưởng khi giảm giá > ngưỡng (đ/xe)", fallback: 100000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Xe máy — khách Doanh nghiệp/Tổ chức", key: "xe_may_dn_reward_low_qty", label: "Số lượng ≤ 10 xe (đ/xe)", fallback: 100000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Xe máy — khách Doanh nghiệp/Tổ chức", key: "xe_may_dn_reward_high_qty", label: "Số lượng > 10 xe (đ/xe)", fallback: 50000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Bảo hiểm xe máy", key: "bao_hiem_xe_may_2nam", label: "Hợp đồng 2 năm (đ)", fallback: 20000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Bảo hiểm xe máy", key: "bao_hiem_xe_may_3nam", label: "Hợp đồng 3 năm (đ)", fallback: 25000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Bảo hiểm xe máy", key: "bao_hiem_xe_may_khac", label: "Thời hạn khác (đ)", fallback: 15000 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Phụ tùng bán lẻ (phụ tùng, phụ kiện)", key: "xe_may_phu_tung_rate_percent", label: "% doanh thu sau giảm giá (nếu có giảm giá thì mất hoa hồng khoản đó, trừ khách nguồn >3 năm)", fallback: 5 },
+  { company: "I. Công ty Cổ phần Thương mại I - Khối xe máy", group: "Dịch vụ sửa chữa", key: "xe_may_sua_chua_rate_percent", label: "% doanh thu sau giảm giá (nếu có giảm giá thì mất hoa hồng khoản đó, trừ khách nguồn >3 năm)", fallback: 5 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Xe mới ô tô", key: "oto_moi_base", label: "Thưởng cơ bản (đ/xe)", fallback: 900000 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Xe mới ô tô", key: "oto_moi_discount_threshold", label: "Ngưỡng giảm giá ngoài chính sách (đ)", fallback: 2000000 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Xe mới ô tô", key: "oto_moi_rate_medium_percent", label: "Tỷ lệ hưởng khi giảm giá ≤ ngưỡng (%)", fallback: 70 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Xe mới ô tô", key: "oto_moi_rate_low_percent", label: "Tỷ lệ hưởng khi giảm giá > ngưỡng (%)", fallback: 50 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Bảo hiểm ô tô", key: "bao_hiem_oto_multiplier_percent", label: "Hệ số hưởng trên tỷ lệ chính sách (%)", fallback: 82 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Phụ kiện, chăm sóc xe", key: "phu_kien_oto_rate_percent", label: "% doanh thu", fallback: 9 },
+  { company: "II. Công ty Cổ phần Thương mại I - Khối ô tô", group: "Sửa chữa, bảo dưỡng", key: "sua_chua_oto_rate_percent", label: "% doanh thu", fallback: 5 },
+  { company: "III. HTC", group: "Đặc sản / Phòng nghỉ / Tiệc", key: "htc_flat_rate_percent", label: "% doanh thu", fallback: 3 },
+  { company: "III. HTC", group: "Vé máy bay", key: "ve_may_bay_le", label: "Khách lẻ (đ/vé)", fallback: 15000 },
+  { company: "III. HTC", group: "Vé máy bay", key: "ve_may_bay_doan", label: "Khách đoàn (đ/vé)", fallback: 10000 },
+  { company: "III. HTC", group: "Tour", key: "tour_reward", label: "Mỗi hợp đồng thành công (đ)", fallback: 500000 },
+  { company: "IV. VYC", group: "Sản phẩm thời trang", key: "vyc_rate_percent", label: "% doanh thu", fallback: 5 },
+  { company: "V. Vật tư nông nghiệp", group: "Phân bón", key: "vtnn_rate_percent", label: "% doanh thu", fallback: 2 },
 ];
 
 const ROLE_META = {
@@ -1919,26 +1921,36 @@ function ChinhSachCongTy({ currentUser, onRefresh }) {
       {settingsForCompany.length > 0 && (
         <Card className="p-4 mb-4">
           <p className="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2"><Wallet size={15} className="text-indigo-700" /> Công thức tính hoa hồng thật</p>
-          <p className="text-xs text-slate-500 mb-3">Đây là các con số app đang dùng thật để tính hoa hồng khi Kế toán xác nhận đơn hàng của {activeCompany}. Sửa số bên dưới sẽ áp dụng ngay từ lần xác nhận tiếp theo — không ảnh hưởng các đơn đã xác nhận trước đó.</p>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {settingsForCompany.map((m) => (
-              <div key={m.key}>
-                <label className="block text-xs font-medium text-slate-600 mb-1">{m.label}</label>
-                <input
-                  type="number"
-                  value={settingValues[m.key] ?? ""}
-                  onChange={(e) => setSettingValues((v) => ({ ...v, [m.key]: e.target.value }))}
-                  className="w-full py-2 px-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
-                />
+          <p className="text-xs text-slate-500 mb-4">Đây là các con số app đang dùng thật để tính hoa hồng khi Kế toán xác nhận đơn hàng của {activeCompany}, liệt kê theo từng nhóm sản phẩm. Sửa số bên dưới sẽ áp dụng ngay từ lần xác nhận tiếp theo — không ảnh hưởng các đơn đã xác nhận trước đó.</p>
+          {Object.entries(
+            settingsForCompany.reduce((acc, m) => {
+              (acc[m.group] = acc[m.group] || []).push(m);
+              return acc;
+            }, {})
+          ).map(([groupName, metas]) => (
+            <div key={groupName} className="mb-4 last:mb-0">
+              <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">{groupName}</p>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {metas.map((m) => (
+                  <div key={m.key}>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">{m.label}</label>
+                    <input
+                      type="number"
+                      value={settingValues[m.key] ?? ""}
+                      onChange={(e) => setSettingValues((v) => ({ ...v, [m.key]: e.target.value }))}
+                      className="w-full py-2 px-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-600"
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
           {settingsMsg && (
-            <p className={`text-sm mt-3 flex items-center gap-1.5 ${settingsMsg.startsWith("ok:") ? "text-emerald-600" : "text-rose-600"}`}>
+            <p className={`text-sm mt-1 mb-2 flex items-center gap-1.5 ${settingsMsg.startsWith("ok:") ? "text-emerald-600" : "text-rose-600"}`}>
               {settingsMsg.startsWith("ok:") ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />} {settingsMsg.slice(settingsMsg.indexOf(":") + 1)}
             </p>
           )}
-          <PrimaryButton className="mt-3" onClick={saveSettings} disabled={savingSettings}>
+          <PrimaryButton className="mt-1" onClick={saveSettings} disabled={savingSettings}>
             {savingSettings ? "Đang lưu..." : "Lưu công thức"}
           </PrimaryButton>
         </Card>
@@ -5113,9 +5125,7 @@ function DichVuSuaChuaForm({ order, onConfirm, onReject, note, setNote, zeroByDa
   const totalRevenue = lr + mr;
   const totalDiscount = ld + md;
   const finalRevenue = Math.max(totalRevenue - totalDiscount, 0);
-  const RATE = 0.05;
-
-  // Khách hàng nguồn trên 3 năm: luôn tính hoa hồng trên doanh thu sau giảm giá,
+  const RATE = cs("xe_may_sua_chua_rate_percent", 5) / 100;
   // dù có phát sinh giảm giá ở khoản nào hay không.
   // Trường hợp còn lại: khoản nào bị giảm giá thì không tính hoa hồng cho khoản đó.
   const rawCommission = customer3Years
@@ -5177,9 +5187,7 @@ function PhuTungKhoForm({ order, onConfirm, onReject, note, setNote, zeroByDateR
   const mr = Number(materialsRevenue) || 0;
   const md = Number(materialsDiscount) || 0;
   const finalRevenue = Math.max(mr - md, 0);
-  const RATE = 0.05;
-
-  // Giống Kế toán dịch vụ: khách hàng nguồn trên 3 năm luôn tính hoa hồng trên doanh
+  const RATE = cs("xe_may_phu_tung_rate_percent", 5) / 100;
   // thu sau giảm giá; trường hợp còn lại, có giảm giá thì mất hoa hồng khoản đó.
   const rawCommission = customer3Years ? finalRevenue * RATE : (md > 0 ? 0 : mr * RATE);
   const totalCommission = zeroByDateRule ? 0 : rawCommission;
