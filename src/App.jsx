@@ -3622,15 +3622,15 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate, onUploadInsura
     <div>
       <div className="flex items-center justify-between mb-4">
         <SectionTitle icon={ClipboardList} title="Đơn hàng của tôi" subtitle={`${mineOrders.length} đơn hàng đã tạo`} />
-        <PrimaryButton onClick={() => setShowForm((s) => !s)} disabled={mineCustomers.length === 0}>
+        <PrimaryButton onClick={() => setShowForm((s) => !s)} disabled={mineCustomers.length === 0 || !!insuranceUploadOrder}>
           <Plus size={15} /> Tạo đơn hàng
         </PrimaryButton>
       </div>
 
       {insuranceUploadOrder && (
         <Card className="p-4 mb-5 border-teal-200 bg-teal-50/40">
-          <p className="font-semibold text-slate-800 text-sm mb-1 flex items-center gap-2"><ShieldCheck size={15} className="text-teal-700" /> Tải ảnh giấy tờ bảo hiểm cho đơn vừa tạo</p>
-          <p className="text-xs text-slate-500 mb-3">Khách: {insuranceUploadOrder.customerName} · Mã đơn: {insuranceUploadOrder.orderCode}. Không bắt buộc — có thể để Kế toán bảo hiểm tải sau, nhưng tải ngay giúp xử lý nhanh hơn.</p>
+          <p className="font-semibold text-slate-800 text-sm mb-1 flex items-center gap-2"><ShieldCheck size={15} className="text-teal-700" /> Bắt buộc tải ảnh giấy tờ bảo hiểm cho đơn vừa tạo</p>
+          <p className="text-xs text-slate-500 mb-3">Khách: {insuranceUploadOrder.customerName} · Mã đơn: {insuranceUploadOrder.orderCode}. Cần tải ảnh xong mới tiếp tục thao tác khác được.</p>
           <div className="grid sm:grid-cols-2 gap-3">
             <SelectField label="Loại giấy tờ" value={insuranceDocType} onChange={(e) => setInsuranceDocType(e.target.value)}>
               <option value="dang_ky_xe">Đăng ký xe</option>
@@ -3644,9 +3644,11 @@ function DaiSuDonHang({ currentUser, customers, orders, onCreate, onUploadInsura
               onChange={setInsuranceDocUrl}
             />
           </div>
+          {!insuranceDocUrl && (
+            <p className="text-xs text-rose-600 mt-2 flex items-center gap-1.5"><AlertCircle size={13} /> Vui lòng chọn ảnh trước khi tiếp tục.</p>
+          )}
           <div className="flex gap-2 mt-3">
-            <PrimaryButton onClick={finishInsuranceUpload} disabled={savingInsuranceDoc}>{savingInsuranceDoc ? "Đang lưu..." : "Lưu ảnh"}</PrimaryButton>
-            <GhostButton onClick={() => setInsuranceUploadOrder(null)}>Để sau</GhostButton>
+            <PrimaryButton onClick={finishInsuranceUpload} disabled={savingInsuranceDoc || !insuranceDocUrl}>{savingInsuranceDoc ? "Đang lưu..." : "Lưu ảnh và tiếp tục"}</PrimaryButton>
           </div>
         </Card>
       )}
