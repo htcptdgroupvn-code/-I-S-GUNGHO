@@ -5045,7 +5045,7 @@ function BaoHiemXeMayForm({ order, onConfirm, onReject, note, setNote, zeroByDat
       </div>
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
-          <p className="text-xs text-slate-500">Số lượng tính chỉ tiêu ({years} năm × {qty})</p>
+          <p className="text-xs text-slate-500">Số năm BH ghi nhận kết quả ({years} năm × {qty})</p>
           <p className="text-sm font-semibold text-slate-700">{targetQuantity}</p>
         </div>
         <div className={`rounded-xl px-3 py-2 ${zeroByDateRule ? "bg-rose-50" : "bg-amber-50"}`}>
@@ -5134,7 +5134,12 @@ function DichVuSuaChuaForm({ order, onConfirm, onReject, note, setNote, zeroByDa
   const RATE = cs("xe_may_sua_chua_rate_percent", 5) / 100;
   // dù có phát sinh giảm giá ở khoản nào hay không.
   // Trường hợp còn lại: khoản nào bị giảm giá thì không tính hoa hồng cho khoản đó.
-  const rawCommission = customer3Years
+  // Chương trình 3 năm: KH chỉ được ưu đãi giảm giá 1 trong 2 khoản (tiền công
+  // HOẶC vật tư). Nếu chọn giảm giá CẢ 2 khoản, hệ thống vẫn cho lưu đơn nhưng
+  // sẽ MẤT ưu đãi hoa hồng chương trình 3 năm (tính như KH thường — mất hoa hồng
+  // ở khoản có giảm giá); chỉ tiêu (doanh thu sau giảm giá) vẫn ghi nhận đầy đủ.
+  const both3YearDiscounts = customer3Years && ld > 0 && md > 0;
+  const rawCommission = customer3Years && !both3YearDiscounts
     ? finalRevenue * RATE
     : (ld > 0 ? 0 : lr * RATE) + (md > 0 ? 0 : mr * RATE);
   const totalCommission = zeroByDateRule ? 0 : rawCommission;
@@ -5162,6 +5167,11 @@ function DichVuSuaChuaForm({ order, onConfirm, onReject, note, setNote, zeroByDa
         <MoneyField label="Doanh thu vật tư dịch vụ (đ)" value={materialsRevenue} onChange={setMaterialsRevenue} />
         <MoneyField label="Giảm giá vật tư dịch vụ (đ)" value={materialsDiscount} onChange={setMaterialsDiscount} />
       </div>
+      {both3YearDiscounts && (
+        <p className="text-xs text-amber-700 font-medium mt-2 flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          <AlertCircle size={13} /> Chương trình 3 năm chỉ được chọn giảm giá 1 trong 2 khoản (tiền công HOẶC vật tư). Vì đã giảm cả 2 nên đơn này sẽ KHÔNG được hưởng ưu đãi hoa hồng chương trình 3 năm.
+        </p>
+      )}
       <div className="grid sm:grid-cols-2 gap-2 mt-3">
         <div className="bg-slate-50 rounded-xl px-3 py-2">
           <p className="text-xs text-slate-500">Doanh thu sau giảm giá (tính chỉ tiêu)</p>
@@ -5584,10 +5594,15 @@ function XeMaySpecialAccountingCard({ order, onConfirm, onReject }) {
       <InvoiceInfoStrip order={order} />
       {order.company === TM1_COMPANY_NAME && (
         <div className="grid sm:grid-cols-2 gap-3 mb-3">
-          <TextField label="Tên KH xuất HĐ" value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
+          <TextField label={order.product === P.BAO_HIEM_XE_MAY ? "Tên KH trên bảo hiểm" : "Tên KH xuất HĐ"} value={invoiceName} onChange={(e) => setInvoiceName(e.target.value)} placeholder="Tên trên hóa đơn (nếu có)" />
           <TextField label="Mã giao dịch" value={transactionCode} onChange={(e) => setTransactionCode(e.target.value)} placeholder="Mã tra soát / mã giao dịch ngân hàng" />
-          <TextField label="Ngày đặt cọc" type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
-          <TextField label="Ngày sử dụng dịch vụ" type="date" value={serviceUseDate} onChange={(e) => setServiceUseDate(e.target.value)} />
+          {order.product !== P.BAO_HIEM_XE_MAY && (
+            <TextField label="Ngày đặt cọc" type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
+          )}
+          <TextField
+            label={order.product === P.SUA_CHUA_XE_MAY ? "Ngày sử dụng dịch vụ (ngày xe vào xưởng)" : "Ngày sử dụng dịch vụ"}
+            type="date" value={serviceUseDate} onChange={(e) => setServiceUseDate(e.target.value)}
+          />
           {shouldAutoCancelByDateRule({ ...order, depositDate }) && (
             <p className="sm:col-span-2 text-xs text-rose-700 font-semibold flex items-center gap-1 bg-rose-50 rounded-lg px-2 py-1.5"><XCircle size={13} /> Ngày đăng ký sau ngày đặt cọc — bấm "Xác nhận thanh toán" sẽ tự động chuyển đơn "Không thành công" thay vì thanh toán.</p>
           )}
